@@ -176,6 +176,12 @@ Antes de evaluar Zabbix, Checkmk, Prometheus, Nagios, Datadog u otras opciones, 
 
 ---
 
+## Documentos de análisis
+
+- [Comparativo: Zabbix vs. Prometheus](docs/comparativo-zabbix-prometheus.md)
+
+---
+
 ## Siguiente paso
 
 Completar primero el **Paso 1: inventario productivo**. Con esa información se podrá preparar una matriz objetiva de evaluación y descartar las herramientas que no cumplan con el entorno real.
