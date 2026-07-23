@@ -128,18 +128,23 @@ Acordar:
 
 ---
 
-## Paso 5. Definir el presupuesto
+## Paso 5. Definir los recursos para la solución open source
 
-Determinar:
+La solución inicial deberá utilizar software **open source y autoadministrado**. No se considerará un costo de licenciamiento por servidor, contenedor o métrica.
 
-- Si debe utilizarse software gratuito u open source.
-- Si se acepta software comercial.
-- Presupuesto anual disponible.
-- Si se contratará soporte oficial.
-- Si se acepta un costo por servidor, contenedor, métrica o volumen de logs.
-- Costo estimado de la infraestructura donde se instalará la plataforma.
+Se debe determinar:
 
-> Una herramienta sin costo de licencia también requiere tiempo de instalación, configuración, respaldo y mantenimiento.
+- Servidor físico o máquina virtual donde se instalará la plataforma.
+- CPU, memoria RAM y almacenamiento disponibles.
+- Espacio requerido para históricos y logs.
+- Tiempo de retención de la información.
+- Estrategia de respaldo y recuperación.
+- Horas disponibles para instalación, configuración y actualización.
+- Personal responsable de la administración.
+- Necesidad de capacitación.
+- Contratación opcional de soporte profesional.
+
+> El software open source puede no tener costo de licencia, pero sí requiere infraestructura, almacenamiento, respaldo, mantenimiento y tiempo del personal.
 
 ---
 
@@ -159,7 +164,7 @@ Preguntar:
 
 ## Información mínima para comparar herramientas
 
-Antes de evaluar Zabbix, Checkmk, Prometheus, Nagios, Datadog u otras opciones, se debe contar al menos con:
+Antes de evaluar Zabbix, Prometheus, Nagios Core, Icinga, Checkmk Raw u otras opciones open source, se debe contar al menos con:
 
 - [ ] Cantidad de servidores Linux productivos.
 - [ ] Cantidad de contenedores Docker.
@@ -171,7 +176,7 @@ Antes de evaluar Zabbix, Checkmk, Prometheus, Nagios, Datadog u otras opciones, 
 - [ ] Modalidad permitida: local, nube o ambas.
 - [ ] Responsables de administración y atención de alertas.
 - [ ] Retención requerida para métricas y logs.
-- [ ] Presupuesto disponible.
+- [ ] Recursos disponibles para infraestructura y administración.
 - [ ] Crecimiento esperado.
 
 ---
