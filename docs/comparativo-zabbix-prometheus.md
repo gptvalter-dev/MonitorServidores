@@ -238,31 +238,7 @@ La configuración suele distribuirse en archivos YAML, reglas, exporters, dashbo
 | Docker dinámico y Kubernetes | Prometheus |
 | Consultas avanzadas de métricas | Prometheus |
 
-## 8. Recomendación para la prueba de concepto
-
-No elegir únicamente por la tabla. Probar ambos con el mismo alcance:
-
-- [ ] Un servidor Linux.
-- [ ] Un contenedor Docker.
-- [ ] Una instancia Tomcat/JVM.
-- [ ] Una URL o API crítica.
-- [ ] Una instancia Oracle.
-- [ ] Una instancia o nodo MongoDB.
-- [ ] Una alerta de indisponibilidad.
-- [ ] Una alerta de capacidad.
-- [ ] Un dashboard operativo.
-
-Registrar para cada alternativa:
-
-- Tiempo de instalación.
-- Tiempo de configuración por tecnología.
-- Cantidad de componentes instalados.
-- Calidad de las métricas.
-- Facilidad para crear alertas.
-- Facilidad para interpretar incidentes.
-- Trabajo requerido para respaldar y actualizar la plataforma.
-
-## 9. Conclusión inicial
+## 8. Conclusión inicial
 
 Para comenzar con el monitoreo de infraestructura productiva actual, **Zabbix presenta una ventaja por integración y facilidad operativa**.
 
