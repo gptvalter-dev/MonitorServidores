@@ -29,8 +29,6 @@ También confirmar cómo se administran los contenedores:
 
 ### Resultado esperado
 
-Un inventario sencillo como el siguiente:
-
 | Componente | Cantidad | Observaciones |
 |---|---:|---|
 | Servidores Linux | Pendiente | Solo producción inicialmente |
@@ -43,175 +41,115 @@ Un inventario sencillo como el siguiente:
 
 ## Paso 2. Confirmar qué se necesita monitorear
 
-Validar que el alcance incluya:
-
 ### Linux
 
-- CPU.
-- Memoria RAM.
-- Disco y espacio disponible.
-- Red.
+- CPU, memoria, disco y red.
 - Procesos y servicios.
 
 ### Docker
 
 - Contenedores activos y detenidos.
-- Reinicios.
-- Consumo de CPU y memoria.
-- Health checks.
+- Reinicios, consumo de recursos y health checks.
 - Errores y eventos `OOMKilled`.
 
 ### Tomcat y Java
 
 - Disponibilidad de Tomcat.
-- Uso de memoria JVM.
-- Heap y Garbage Collector.
-- Threads activos y bloqueados.
+- Heap, Garbage Collector y threads.
 - Errores de aplicación.
 
 ### Aplicaciones y APIs
 
-- Disponibilidad HTTP/HTTPS.
-- Tiempo de respuesta.
+- Disponibilidad y tiempo de respuesta.
 - Errores HTTP `4xx` y `5xx`.
-- Rendimiento de APIs.
-- Vencimiento de certificados.
+- Rendimiento de APIs y vencimiento de certificados.
 
 ### Oracle
 
-- Disponibilidad de la instancia y listener.
-- Sesiones y conexiones.
-- Uso de tablespaces.
-- Bloqueos y consultas lentas.
+- Disponibilidad de instancia y listener.
+- Sesiones, conexiones, tablespaces y bloqueos.
 - Uso de CPU y memoria del servidor.
 
 ### MongoDB
 
-- Disponibilidad.
-- Operaciones por segundo.
-- Uso de memoria.
-- Consultas e índices.
-- Estado y retraso del Replica Set.
+- Disponibilidad, operaciones y memoria.
+- Consultas, índices y estado del Replica Set.
 
 ---
 
 ## Paso 3. Identificar restricciones técnicas
 
-Preguntar al equipo responsable de infraestructura:
+Confirmar:
 
-- ¿Se permite instalar agentes en los servidores Linux?
-- ¿Se permite consultar Docker y su socket?
-- ¿Se puede habilitar JMX en Tomcat?
-- ¿Se pueden crear usuarios de solo lectura en Oracle y MongoDB?
-- ¿La plataforma de monitoreo debe instalarse sobre Linux?
-- ¿El monitoreo debe permanecer dentro de la red interna?
-- ¿Se permite utilizar una solución en la nube o SaaS?
-- ¿Qué puertos y comunicaciones están permitidos?
-
-### Por qué es importante
-
-Estas restricciones pueden descartar herramientas antes de realizar una prueba técnica.
+- Si se permite instalar agentes en Linux.
+- Si se permite consultar Docker y su socket.
+- Si se puede habilitar JMX en Tomcat.
+- Si se pueden crear usuarios de solo lectura en Oracle y MongoDB.
+- Si el monitoreo debe ser local, interno o puede utilizar nube.
+- Qué puertos y comunicaciones están permitidos.
 
 ---
 
-## Paso 4. Definir cómo se operará el monitoreo
+## Paso 4. Definir la operación
 
 Acordar:
 
-- Quién administrará la herramienta.
-- Quién recibirá las alertas.
-- Si el monitoreo será `24x7`.
-- Qué medio se utilizará para alertar: correo, Teams, Telegram u otro.
-- Cuánto tiempo se conservarán las métricas.
-- Cuántos usuarios consultarán los dashboards.
-- Cómo se manejarán las ventanas de mantenimiento.
+- Responsables de administración y atención de alertas.
+- Cobertura `24x7`.
+- Medios de notificación.
+- Retención de métricas.
+- Usuarios de dashboards.
+- Ventanas de mantenimiento.
 
 ---
 
-## Paso 5. Definir los recursos para la solución open source
+## Paso 5. Definir recursos
 
-La solución inicial deberá utilizar software **open source y autoadministrado**. No se considerará un costo de licenciamiento por servidor, contenedor o métrica.
+La solución inicial será **open source y autoadministrada**. Se debe determinar:
 
-Se debe determinar:
+- Infraestructura disponible.
+- CPU, memoria y almacenamiento.
+- Retención, respaldos y recuperación.
+- Personal responsable.
+- Capacitación y soporte opcional.
 
-- Servidor físico o máquina virtual donde se instalará la plataforma.
-- CPU, memoria RAM y almacenamiento disponibles.
-- Espacio requerido para históricos y logs.
-- Tiempo de retención de la información.
-- Estrategia de respaldo y recuperación.
-- Horas disponibles para instalación, configuración y actualización.
-- Personal responsable de la administración.
-- Necesidad de capacitación.
-- Contratación opcional de soporte profesional.
-
-> El software open source puede no tener costo de licencia, pero sí requiere infraestructura, almacenamiento, respaldo, mantenimiento y tiempo del personal.
+> El software puede no tener costo de licencia, pero requiere infraestructura, mantenimiento y tiempo operativo.
 
 ---
 
-## Paso 6. Estimar el crecimiento
+## Paso 6. Estimar crecimiento
 
-Preguntar:
-
-- ¿Cuántos servidores se esperan en uno o dos años?
-- ¿Aumentará la cantidad de contenedores y aplicaciones?
-- ¿Se planea implementar Kubernetes?
-- ¿Posteriormente se necesitará APM?
-- ¿Se centralizarán logs?
-- ¿Se requerirán trazas de aplicaciones?
-- ¿Se agregarán más sedes o ambientes?
+- Servidores esperados en uno o dos años.
+- Crecimiento de contenedores y aplicaciones.
+- Posible adopción de Kubernetes.
+- Necesidad futura de APM, logs y trazas.
+- Nuevas sedes o ambientes.
 
 ---
 
 ## Información mínima para comparar herramientas
 
-Antes de evaluar Zabbix, Prometheus, Nagios Core, Icinga, Checkmk Raw u otras opciones open source, se debe contar al menos con:
-
-- [ ] Cantidad de servidores Linux productivos.
-- [ ] Cantidad de contenedores Docker.
-- [ ] Cantidad de instancias Tomcat.
-- [ ] Cantidad de bases Oracle y MongoDB.
+- [ ] Cantidad de servidores, contenedores, Tomcat y bases de datos.
 - [ ] Método de despliegue de contenedores.
-- [ ] Alcance exacto de monitoreo.
-- [ ] Restricciones para instalar agentes y habilitar accesos.
-- [ ] Modalidad permitida: local, nube o ambas.
-- [ ] Responsables de administración y atención de alertas.
-- [ ] Retención requerida para métricas y logs.
-- [ ] Recursos disponibles para infraestructura y administración.
+- [ ] Alcance exacto del monitoreo.
+- [ ] Restricciones de agentes, accesos y red.
+- [ ] Responsables y medios de alerta.
+- [ ] Retención requerida.
+- [ ] Recursos disponibles.
 - [ ] Crecimiento esperado.
 
 ---
 
-## Documentos de análisis e implementación
+## Documentación
 
 - [Comparativo: Zabbix vs. Prometheus](docs/comparativo-zabbix-prometheus.md)
 - [Implementación de Zabbix con Docker, Windows y Oracle Linux](docs/implementacion-zabbix-docker-oracle.md)
-- [Base de conocimiento de incidencias y soluciones](docs/base-conocimiento/README.md)
+- [Base de conocimiento de incidencias](docs/base-conocimiento/README.md)
 
-## Estructura de la documentación
+## Estado actual
 
-```text
-docs/
-├── implementacion-zabbix-docker-oracle.md
-└── base-conocimiento/
-    ├── README.md
-    ├── docker-windows.md
-    ├── zabbix-docker.md
-    ├── agentes-zabbix.md
-    └── oracle.md
-```
-
-La guía de implementación contiene el procedimiento normal. La base de conocimiento concentra errores, diagnóstico y soluciones para facilitar consultas posteriores.
-
-## Estado actual de la prueba Zabbix
-
-- Zabbix 7.4 está funcionando en Docker Desktop sobre Windows.
-- El equipo Windows ya reporta métricas mediante Zabbix Agent 2.
-- Oracle Linux 8.10 ya tiene Zabbix Agent 2 instalado desde el repositorio oficial.
-- El sistema operativo Linux está incorporado al monitoreo.
-- El monitoreo de Oracle Database todavía está pendiente de completar y validar.
-
----
+Zabbix 7.4 funciona en Docker y ya monitorea Windows y Oracle Linux. La conexión con Oracle Database sigue pendiente.
 
 ## Siguiente paso
 
-Completar la conexión de la plantilla **Oracle by Zabbix agent 2** mediante un usuario exclusivo de monitoreo, macros seguras y la validación de `oracle.ping`. Después se continuará con el inventario productivo y la matriz objetiva de evaluación.
+Crear el usuario de monitoreo Oracle, configurar las macros del host y validar `oracle.ping`.
