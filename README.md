@@ -185,6 +185,22 @@ Antes de evaluar Zabbix, Prometheus, Nagios Core, Icinga, Checkmk Raw u otras op
 
 - [Comparativo: Zabbix vs. Prometheus](docs/comparativo-zabbix-prometheus.md)
 - [Implementación de Zabbix con Docker, Windows y Oracle Linux](docs/implementacion-zabbix-docker-oracle.md)
+- [Base de conocimiento de incidencias y soluciones](docs/base-conocimiento/README.md)
+
+## Estructura de la documentación
+
+```text
+docs/
+├── implementacion-zabbix-docker-oracle.md
+└── base-conocimiento/
+    ├── README.md
+    ├── docker-windows.md
+    ├── zabbix-docker.md
+    ├── agentes-zabbix.md
+    └── oracle.md
+```
+
+La guía de implementación contiene el procedimiento normal. La base de conocimiento concentra errores, diagnóstico y soluciones para facilitar consultas posteriores.
 
 ## Estado actual de la prueba Zabbix
 
