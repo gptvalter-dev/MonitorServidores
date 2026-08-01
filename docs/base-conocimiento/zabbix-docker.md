@@ -8,9 +8,9 @@
 failed to resolve reference "zabbix/zabbix-server-mysql:Windows_NT-7.4-latest"
 ```
 
-**Causa identificada**
+**Causa**
 
-PowerShell proporciona la variable de entorno del sistema operativo como `OS=Windows_NT`, y Compose la utiliza para construir la etiqueta de las imágenes.
+PowerShell proporciona `OS=Windows_NT` y Compose lo usa para construir la etiqueta de las imágenes.
 
 **Diagnóstico**
 
@@ -20,26 +20,13 @@ docker compose config --images
 
 **Solución**
 
-En cada nueva sesión de PowerShell:
-
 ```powershell
 $env:OS="alpine"
 docker compose config --images
-```
-
-Resultado esperado:
-
-```text
-zabbix/zabbix-server-mysql:alpine-7.4-latest
-zabbix/zabbix-web-nginx-mysql:alpine-7.4-latest
-mysql:8.4-oracle
-```
-
-Después:
-
-```powershell
 docker compose up -d
 ```
+
+Las imágenes de Zabbix deben usar la etiqueta `alpine-7.4-latest`.
 
 **Estado:** resuelta.
 
@@ -54,9 +41,9 @@ Access denied for user 'zabbix'
 service "server-db-init" didn't complete successfully
 ```
 
-**Causa identificada**
+**Causa**
 
-Los archivos secretos de `env_vars` tenían finales de línea Windows `CRLF`. Los contenedores Linux leían caracteres adicionales en el usuario o la contraseña.
+Los secretos de `env_vars` tenían finales de línea Windows `CRLF`; los contenedores Linux leían caracteres adicionales.
 
 **Diagnóstico**
 
@@ -64,7 +51,7 @@ Los archivos secretos de `env_vars` tenían finales de línea Windows `CRLF`. Lo
 (Get-Item .\env_vars\.MYSQL_USER).Length
 ```
 
-El archivo `.MYSQL_USER` medía 8 bytes; se esperaba `zabbix` con un solo salto `LF`, es decir, 7 bytes.
+El archivo `.MYSQL_USER` medía 8 bytes en vez de 7.
 
 **Solución**
 
@@ -84,21 +71,15 @@ foreach ($archivo in $archivos) {
 }
 ```
 
-Como era una instalación nueva, se eliminó la base incompleta:
+Solo en una instalación nueva, eliminar la base incompleta y reconstruir:
 
 ```powershell
-$env:OS="alpine"
 docker compose down
 Remove-Item -Recurse -Force .\zbx_env\var\lib\mysql
-```
-
-Después se inició nuevamente:
-
-```powershell
 docker compose up -d
 ```
 
-**Precaución:** no eliminar el directorio MySQL cuando existan datos que deban conservarse.
+> No eliminar el directorio MySQL si contiene información que deba conservarse.
 
 **Estado:** resuelta.
 
@@ -113,7 +94,7 @@ ports are not available
 listen tcp 0.0.0.0:10051: bind: An attempt was made to access a socket...
 ```
 
-**Causa identificada**
+**Causa**
 
 El puerto `10051` estaba reservado por Windows.
 
@@ -131,40 +112,10 @@ En `.env`:
 ZABBIX_SERVER_PORT=11051
 ```
 
-El mapeo resultante es:
-
-```text
-Windows 11051 → contenedor Zabbix Server 10051
-```
-
-Los agentes activos remotos deben utilizar:
+Los agentes activos remotos deben usar:
 
 ```ini
 ServerActive=<IP_ZABBIX_SERVER>:11051
 ```
 
 **Estado:** resuelta.
-
----
-
-## 4. Verificación rápida de contenedores
-
-```powershell
-docker compose ps
-```
-
-Estado esperado:
-
-| Servicio | Estado esperado |
-|---|---|
-| `mysql-server` | `healthy` |
-| `zabbix-server` | `Up` |
-| `zabbix-web-nginx-mysql` | `healthy` |
-
-Logs útiles:
-
-```powershell
-docker compose logs --no-color server-db-init
-docker compose logs --no-color zabbix-server
-docker compose logs --no-color zabbix-web-nginx-mysql
-```
