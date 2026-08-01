@@ -3,20 +3,24 @@
 > Fecha de corte: **31 de julio de 2026**  
 > Estado: **Zabbix funciona para Windows y para el sistema operativo Oracle Linux. El monitoreo de Oracle Database todavía está pendiente de completar.**
 
-## Seguridad de este documento
+Las incidencias y soluciones se encuentran en la [base de conocimiento](base-conocimiento/README.md). Esta guía contiene únicamente el procedimiento de instalación y configuración.
 
-Este repositorio es público. Por ese motivo se utilizan valores genéricos como:
+## Seguridad
+
+Este repositorio es público. Utilizar valores genéricos:
 
 - `<IP_ZABBIX_SERVER>`
+- `<IP_ORACLE_LINUX>`
+- `<HOSTNAME_WINDOWS>`
 - `<HOSTNAME_LINUX>`
 - `<ORACLE_SERVICE>`
 - `<CONTRASENA_SEGURA>`
 
-No se deben publicar direcciones internas, nombres reales de servidores, usuarios de aplicación ni contraseñas.
+No publicar contraseñas, direcciones internas, usuarios de aplicación ni nombres reales de servidores productivos.
 
 ---
 
-## 1. Arquitectura implementada
+## 1. Arquitectura del laboratorio
 
 ```text
 Windows
@@ -32,63 +36,25 @@ Windows
         └── Oracle Database
 ```
 
-Puertos utilizados en el laboratorio:
-
-| Componente | Puerto publicado | Puerto interno/destino |
+| Componente | Puerto publicado | Destino |
 |---|---:|---:|
 | Interfaz web Zabbix | `8080` | `8080` |
 | HTTPS web Zabbix | `8443` | `8443` |
 | Zabbix Server | `11051` | `10051` del contenedor |
-| Agent 2 de Windows | `11050` | Local en Windows |
-| Agent 2 de Oracle Linux | `10050` | Local en Oracle Linux |
-
-Los puertos `10050` y `10051` estaban dentro de rangos reservados en el equipo Windows; por eso se publicaron puertos alternos.
+| Agent 2 de Windows | `11050` | Windows local |
+| Agent 2 de Oracle Linux | `10050` | Oracle Linux |
 
 ---
 
-# Parte A. Preparación de Windows y Docker Desktop
+# Parte A. Preparar Windows y Docker Desktop
 
-## 2. Verificar WSL
-
-En PowerShell:
+## 2. Verificar WSL 2
 
 ```powershell
 wsl --version
 ```
 
-El ambiente utilizado ya tenía WSL 2 instalado.
-
-## 3. Instalar Docker Desktop
-
-1. Descargar Docker Desktop para Windows desde el sitio oficial.
-2. Ejecutar el instalador.
-3. Seleccionar el backend de **WSL 2**.
-4. Reiniciar Windows cuando sea solicitado.
-5. Abrir Docker Desktop y esperar a que el motor Linux esté iniciado.
-
-## 4. Incidencia: Docker no detectó virtualización
-
-Aunque el Administrador de tareas mostraba la virtualización habilitada, Docker indicó que no podía iniciar.
-
-Se comprobó el hipervisor:
-
-```powershell
-Get-ComputerInfo -Property HyperV*
-```
-
-Resultado relevante:
-
-```text
-HyperVisorPresent : True
-```
-
-Se habilitó el arranque automático del hipervisor desde PowerShell como administrador:
-
-```powershell
-bcdedit /set hypervisorlaunchtype auto
-```
-
-También se encontró que la característica de WSL estaba deshabilitada:
+Verificar características de Windows:
 
 ```powershell
 Get-WindowsOptionalFeature -Online |
@@ -99,31 +65,29 @@ Where-Object { $_.FeatureName -in @(
 Select-Object FeatureName, State
 ```
 
-Se habilitó con:
+Ambas deben estar habilitadas.
 
-```powershell
-dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
-```
+## 3. Instalar Docker Desktop
 
-Después de reiniciar Windows, Docker Desktop inició correctamente.
+1. Descargar Docker Desktop para Windows.
+2. Ejecutar el instalador.
+3. Utilizar el backend WSL 2.
+4. Reiniciar Windows si se solicita.
+5. Abrir Docker Desktop y esperar a que el motor Linux esté iniciado.
 
-## 5. Validar Docker
+Validar:
 
 ```powershell
 docker run hello-world
 ```
 
-Resultado esperado:
-
-```text
-Hello from Docker!
-```
+Consulta de errores: [Docker Desktop y Windows](base-conocimiento/docker-windows.md).
 
 ---
 
-# Parte B. Instalación de Zabbix 7.4 con Docker Compose
+# Parte B. Instalar Zabbix 7.4 con Docker Compose
 
-## 6. Clonar el repositorio oficial
+## 4. Clonar el repositorio oficial
 
 ```powershell
 mkdir C:\docker
@@ -139,95 +103,31 @@ Verificar Compose:
 docker compose version
 ```
 
-Zabbix 7.4 requiere Docker Compose 2.24.0 o posterior.
+## 5. Configurar variables y puertos
 
-## 7. Configurar puertos web
-
-En `.env` se configuró:
+Editar `.env`:
 
 ```dotenv
 ZABBIX_WEB_NGINX_HTTP_PORT=8080
 ZABBIX_WEB_NGINX_HTTPS_PORT=8443
-```
-
-## 8. Incidencia: imágenes `Windows_NT-7.4-latest` inexistentes
-
-El comando inicial intentó descargar imágenes como:
-
-```text
-zabbix/zabbix-server-mysql:Windows_NT-7.4-latest
-```
-
-Esto ocurrió porque PowerShell proporcionó `OS=Windows_NT` al archivo Compose.
-
-Solución en cada nueva sesión de PowerShell:
-
-```powershell
-$env:OS="alpine"
-docker compose config --images
-```
-
-Las imágenes correctas deben incluir:
-
-```text
-zabbix/zabbix-server-mysql:alpine-7.4-latest
-zabbix/zabbix-web-nginx-mysql:alpine-7.4-latest
-mysql:8.4-oracle
-```
-
-## 9. Incidencia: MySQL rechazó al usuario Zabbix
-
-El contenedor `server-db-init` terminó con:
-
-```text
-Access denied for user 'zabbix'
-```
-
-Los archivos secretos dentro de `env_vars` tenían finales de línea Windows `CRLF`. El contenedor esperaba formato Linux `LF`.
-
-Se convirtieron los archivos:
-
-```powershell
-$archivos = @(
-    ".\env_vars\.MYSQL_USER",
-    ".\env_vars\.MYSQL_PASSWORD",
-    ".\env_vars\.MYSQL_ROOT_PASSWORD"
-)
-
-$utf8SinBom = New-Object System.Text.UTF8Encoding($false)
-
-foreach ($archivo in $archivos) {
-    $ruta = (Resolve-Path $archivo).Path
-    $texto = [System.IO.File]::ReadAllText($ruta).TrimEnd([char[]]"`r`n")
-    [System.IO.File]::WriteAllText($ruta, $texto + "`n", $utf8SinBom)
-}
-```
-
-Como la instalación era nueva, se eliminó la base incompleta:
-
-```powershell
-$env:OS="alpine"
-docker compose down
-Remove-Item -Recurse -Force .\zbx_env\var\lib\mysql
-```
-
-## 10. Incidencia: puerto `10051` reservado por Windows
-
-Se verificaron los rangos excluidos:
-
-```powershell
-netsh interface ipv4 show excludedportrange protocol=tcp
-```
-
-El puerto `10051` estaba dentro de un rango reservado. Se cambió en `.env`:
-
-```dotenv
 ZABBIX_SERVER_PORT=11051
 ```
 
-Zabbix Server continúa escuchando en `10051` dentro del contenedor; Windows publica el puerto `11051`.
+En cada nueva sesión de PowerShell:
 
-## 11. Iniciar Zabbix
+```powershell
+$env:OS="alpine"
+```
+
+Verificar las imágenes:
+
+```powershell
+docker compose config --images
+```
+
+Deben aparecer imágenes `alpine-7.4-latest` para Zabbix.
+
+## 6. Iniciar Zabbix
 
 ```powershell
 cd C:\docker\zabbix-docker
@@ -235,7 +135,7 @@ $env:OS="alpine"
 docker compose up -d
 ```
 
-Verificar:
+Validar:
 
 ```powershell
 docker compose ps
@@ -243,11 +143,11 @@ docker compose ps
 
 Estado esperado:
 
-- MySQL: `healthy`
-- Zabbix Server: `Up`
-- Zabbix Web: `healthy`
+- MySQL: `healthy`.
+- Zabbix Server: `Up`.
+- Zabbix Web: `healthy`.
 
-Acceso web:
+Acceso:
 
 ```text
 http://localhost:8080
@@ -260,11 +160,11 @@ Usuario: Admin
 Contraseña: zabbix
 ```
 
-Estas credenciales solo deben conservarse en un laboratorio no expuesto.
+No conservar estas credenciales en ambientes expuestos o productivos.
 
-## 12. Comandos de operación
+## 7. Operación básica
 
-Iniciar:
+Iniciar o actualizar:
 
 ```powershell
 $env:OS="alpine"
@@ -283,57 +183,34 @@ Reanudar:
 docker compose start
 ```
 
-Eliminar contenedores y redes, conservando los archivos persistentes:
+Eliminar contenedores y redes:
 
 ```powershell
 docker compose down
 ```
 
-## 13. Incidencia: no existe el pipe `dockerDesktopLinuxEngine`
-
-Mensaje observado:
-
-```text
-failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine
-```
-
-Causa: Docker Desktop estaba cerrado o el motor Linux todavía no iniciaba.
-
-Solución: abrir Docker Desktop y esperar a que el motor esté en ejecución antes de ejecutar Compose.
+Consulta de errores: [Zabbix en Docker Compose](base-conocimiento/zabbix-docker.md).
 
 ---
 
-# Parte C. Monitoreo del equipo Windows
+# Parte C. Monitorear Windows
 
-## 14. Instalar Zabbix Agent 2
+## 8. Instalar Zabbix Agent 2
 
-Se utilizó el instalador MSI oficial para Windows.
+Instalar el MSI oficial de Zabbix Agent 2.
 
-Configuración conceptual:
+Configuración:
 
 ```ini
 Hostname=<HOSTNAME_WINDOWS>
 Server=127.0.0.1
 ServerActive=127.0.0.1:11051
-```
-
-## 15. Incidencia: Agent 2 no inició en el puerto `10050`
-
-Windows tenía reservado el puerto `10050`.
-
-Se editó:
-
-```text
-C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf
-```
-
-La línea debía estar activa, sin `#`:
-
-```ini
 ListenPort=11050
 ```
 
-Validación:
+La línea `ListenPort` debe estar activa, sin `#`.
+
+Validar:
 
 ```powershell
 & "C:\Program Files\Zabbix Agent 2\zabbix_agent2.exe" `
@@ -341,18 +218,22 @@ Validación:
   -T
 ```
 
-Inicio del servicio:
+Iniciar:
 
 ```powershell
 Start-Service "Zabbix Agent 2"
 Get-Service "Zabbix Agent 2"
 ```
 
-Resultado esperado: `Running`.
+## 9. Crear el host Windows
 
-## 16. Dar de alta Windows en Zabbix
+Ruta:
 
-En **Recopilación de datos → Equipos → Crear equipo**:
+```text
+Recopilación de datos → Equipos → Crear equipo
+```
+
+Configuración:
 
 ```text
 Nombre del equipo: <HOSTNAME_WINDOWS>
@@ -362,47 +243,32 @@ Interfaces: ninguna
 Estado: habilitado
 ```
 
-Para comprobaciones activas no se requiere interfaz, porque el agente inicia la comunicación hacia Zabbix Server.
+Para comprobaciones activas no se requiere interfaz.
 
-Resultado obtenido: métricas de CPU, RAM, discos, red, servicios y disponibilidad activa.
+Validar en:
+
+```text
+Monitoreo → Últimos datos
+```
+
+Métricas esperadas: CPU, memoria, discos, red, servicios y disponibilidad activa.
+
+Consulta de errores: [Agentes Zabbix](base-conocimiento/agentes-zabbix.md).
 
 ---
 
-# Parte D. Instalación de Agent 2 en Oracle Linux 8.10
+# Parte D. Instalar Agent 2 en Oracle Linux 8.10
 
-## 17. Incidencia: `Segmentation fault` con agente estático
+## 10. Instalar el repositorio oficial
 
-Se había instalado un binario manual bajo:
-
-```text
-/opt/zabbix/sbin/zabbix_agentd
-```
-
-El binario mostraba versión y validaba la configuración:
-
-```bash
-/opt/zabbix/sbin/zabbix_agentd -V
-/opt/zabbix/sbin/zabbix_agentd -c /opt/zabbix/conf/zabbix_agentd.conf -T
-```
-
-Pero al iniciar terminaba con:
-
-```text
-Segmentation fault (core dumped)
-```
-
-Los casos antiguos ZBX-9206 y Zabbix Agent 4.4.2 no correspondían directamente a esta instalación 7.4. La solución adoptada fue retirar el binario manual de la ruta operativa e instalar **Zabbix Agent 2 desde el repositorio oficial**.
-
-## 18. Instalar repositorio y Agent 2
-
-Respaldar la configuración anterior:
+Respaldar una configuración manual anterior, cuando exista:
 
 ```bash
 cp -a /opt/zabbix/conf/zabbix_agentd.conf \
       /root/zabbix_agentd.conf.opt.backup
 ```
 
-Instalar repositorio:
+Instalar el repositorio:
 
 ```bash
 rpm -Uvh https://repo.zabbix.com/zabbix/7.4/release/oracle/8/noarch/zabbix-release-latest-7.4.el8.noarch.rpm
@@ -416,7 +282,7 @@ Instalar Agent 2:
 dnf install -y zabbix-agent2
 ```
 
-Rutas principales:
+Rutas:
 
 ```text
 Ejecutable:    /usr/sbin/zabbix_agent2
@@ -424,7 +290,7 @@ Configuración: /etc/zabbix/zabbix_agent2.conf
 Servicio:      zabbix-agent2
 ```
 
-## 19. Configurar Agent 2 en Linux
+## 11. Configurar Agent 2
 
 Editar:
 
@@ -432,7 +298,7 @@ Editar:
 vi /etc/zabbix/zabbix_agent2.conf
 ```
 
-Configuración base:
+Configurar:
 
 ```ini
 Server=<IP_ZABBIX_SERVER>
@@ -441,10 +307,7 @@ Hostname=<HOSTNAME_LINUX>
 ListenPort=10050
 ```
 
-- `ServerActive` habilita las comprobaciones activas.
-- `Server` autoriza las comprobaciones pasivas desde Zabbix Server.
-- `Hostname` es un identificador lógico y debe coincidir exactamente con el campo **Nombre del equipo** en Zabbix.
-- No es obligatorio que `Hostname` sea igual al hostname real del sistema operativo.
+El `Hostname` es el identificador lógico usado por las comprobaciones activas y debe coincidir exactamente con el campo **Nombre del equipo** en Zabbix.
 
 Validar e iniciar:
 
@@ -454,9 +317,7 @@ systemctl enable --now zabbix-agent2
 systemctl status zabbix-agent2 --no-pager
 ```
 
-## 20. Registrar Oracle Linux en Zabbix
-
-Crear el equipo:
+## 12. Crear el host Oracle Linux
 
 ```text
 Nombre del equipo: <HOSTNAME_LINUX>
@@ -466,16 +327,7 @@ Interfaces: ninguna inicialmente
 Estado: habilitado
 ```
 
-## 21. Incidencia: comprobaciones activas sin datos
-
-Mensajes observados:
-
-```text
-cannot connect to [<IP_ZABBIX_SERVER>:11051]
-host [<HOSTNAME_LINUX>] not found
-```
-
-Validaciones realizadas:
+Verificar conectividad activa:
 
 ```bash
 timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/11051' \
@@ -483,65 +335,56 @@ timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/11051' \
   || echo "SIN CONEXION"
 ```
 
-También se revisó:
+Revisar logs:
 
 ```bash
 tail -n 50 /var/log/zabbix/zabbix_agent2.log
+journalctl -u zabbix-agent2 -n 50 --no-pager
 ```
 
-Solución aplicada:
-
-1. Confirmar que `Hostname` coincidiera exactamente con el nombre del host en Zabbix.
-2. Vincular directamente al host la plantilla `Linux by Zabbix agent active`.
-3. Reiniciar Agent 2.
-4. Esperar la siguiente actualización de comprobaciones activas.
-
-El registro posteriormente mostró que las comprobaciones activas volvieron a estar disponibles.
+Consulta de errores: [Agentes Zabbix](base-conocimiento/agentes-zabbix.md).
 
 ---
 
-# Parte E. Preparación para monitorear Oracle Database
+# Parte E. Preparar el monitoreo de Oracle Database
 
-## 22. Vincular la plantilla correcta
+## 13. Vincular plantillas al host
 
-La plantilla debe vincularse **directamente al host Oracle Linux**, no dentro de la plantilla oficial de Linux:
+Las dos plantillas deben vincularse directamente al host:
 
 ```text
 Linux by Zabbix agent active
 Oracle by Zabbix agent 2
 ```
 
-Incidencia encontrada: al intentar agregar Oracle dentro de la plantilla Linux, Zabbix solicitó una interfaz. La corrección fue cancelar el cambio sobre la plantilla oficial y editar el host.
+No modificar la plantilla oficial de Linux para agregarle Oracle.
 
-## 23. Agregar interfaz pasiva al host
+## 14. Agregar interfaz pasiva
 
-La plantilla `Oracle by Zabbix agent 2` utiliza elementos pasivos. Por eso se agregó al host una interfaz tipo **Agente**:
+En el host `<HOSTNAME_LINUX>`, agregar interfaz tipo **Agente**:
 
 ```text
 IP: <IP_ORACLE_LINUX>
-Puerto: 10050
 Conectar mediante: IP
+Puerto: 10050
 ```
 
-Agent 2 puede trabajar simultáneamente con comprobaciones activas y pasivas.
-
-## 24. Verificar que Agent 2 escucha
+Verificar que Agent 2 escucha:
 
 ```bash
 ss -lntp | grep ':10050'
 ```
 
-Resultado esperado:
+## 15. Autorizar el firewall
 
-```text
-LISTEN ... *:10050 ... zabbix_agent2
+Identificar la zona:
+
+```bash
+firewall-cmd --state
+firewall-cmd --get-active-zones
 ```
 
-## 25. Incidencia: interfaz pasiva en timeout
-
-El servicio escuchaba en `10050`, pero Zabbix no podía conectarse. `firewalld` estaba activo y la interfaz principal pertenecía a la zona `public`.
-
-Se abrió el puerto únicamente desde Zabbix Server:
+Autorizar únicamente a Zabbix Server:
 
 ```bash
 firewall-cmd --permanent --zone=public \
@@ -551,11 +394,9 @@ firewall-cmd --reload
 firewall-cmd --zone=public --list-rich-rules
 ```
 
-No se recomienda abrir `10050` para toda la red.
+## 16. Identificar el servicio Oracle
 
-## 26. Datos de Oracle identificados
-
-Se confirmó:
+En SQL*Plus:
 
 ```sql
 SHOW PARAMETER service_names;
@@ -563,13 +404,13 @@ SELECT CDB FROM V$DATABASE;
 SELECT SYS_CONTEXT('USERENV', 'CON_NAME') FROM DUAL;
 ```
 
-Resultado funcional:
+Resultado obtenido en la prueba:
 
-- La base es **no-CDB** (`CDB = NO`).
-- Existe un `SERVICE_NAME` publicado.
-- La plantilla debe usar el `SERVICE_NAME`; no debe utilizar directamente el SID en `{$ORACLE.SERVICE}`.
+- Base no-CDB.
+- Se utilizará un usuario local `ZABBIX_MON`.
+- `{$ORACLE.SERVICE}` deberá contener el `SERVICE_NAME`, no asumir el SID.
 
-## 27. Macros que deberán configurarse en el host
+## 17. Configurar macros del host
 
 Ruta:
 
@@ -577,7 +418,7 @@ Ruta:
 Recopilación de datos → Equipos → <HOSTNAME_LINUX> → Macros
 ```
 
-Valores pendientes:
+Macros pendientes:
 
 ```text
 {$ORACLE.CONNSTRING} = tcp://127.0.0.1:1521
@@ -586,7 +427,9 @@ Valores pendientes:
 {$ORACLE.PASSWORD}   = <CONTRASENA_SEGURA>
 ```
 
-La contraseña debe guardarse como **Texto secreto** y nunca debe publicarse en GitHub.
+La contraseña debe ser de tipo **Texto secreto**.
+
+Consulta específica: [Monitoreo de Oracle](base-conocimiento/oracle.md).
 
 ---
 
@@ -598,50 +441,31 @@ La contraseña debe guardarse como **Texto secreto** y nunca debe publicarse en 
 | Zabbix Server 7.4 en Docker | Correcto |
 | Interfaz web | Correcto |
 | MySQL de Zabbix | Correcto |
-| Monitoreo del equipo Windows | Correcto |
+| Monitoreo de Windows | Correcto |
 | Zabbix Agent 2 en Oracle Linux | Correcto |
-| Métricas del sistema operativo Linux | Correctas o en validación final |
-| Acceso pasivo al puerto `10050` | Regla de firewall aplicada; confirmar disponibilidad en verde |
-| Plugin Oracle de Agent 2 | Cargado según el log del agente |
-| Plantilla `Oracle by Zabbix agent 2` | Vinculada o en proceso de vinculación directa al host |
-| Usuario Oracle `ZABBIX_MON` | **Pendiente de crear** |
-| Macros de conexión Oracle | **Pendientes de completar** |
-| Métricas Oracle Database | **No conectadas todavía** |
+| Métricas de Oracle Linux | Incorporadas o en validación final |
+| Acceso pasivo `10050` | Configurado; confirmar disponibilidad |
+| Plantilla Oracle | Vinculada o en proceso de validación |
+| Usuario Oracle `ZABBIX_MON` | Pendiente |
+| Macros Oracle | Pendientes |
+| Métricas de Oracle Database | No conectadas todavía |
 
----
+## Siguiente fase
 
-# Siguiente fase pendiente: conectar Oracle
-
-No debe considerarse concluido el monitoreo de Oracle hasta completar y validar estos pasos:
-
-- [ ] Confirmar que la interfaz pasiva del host aparece disponible en Zabbix.
-- [ ] Crear el usuario Oracle exclusivo `ZABBIX_MON` en la base no-CDB.
-- [ ] Otorgar únicamente los permisos requeridos por la plantilla oficial.
-- [ ] Confirmar si existe licencia de **Oracle Diagnostics Pack** antes de consultar `V$ACTIVE_SESSION_HISTORY`.
-- [ ] Configurar las cuatro macros Oracle en el host.
-- [ ] Probar `oracle.ping`.
-- [ ] Confirmar en **Monitoreo → Últimos datos** que lleguen métricas de instancia, sesiones, procesos, SGA/PGA, tablespaces, redo, archive y FRA.
-- [ ] Ajustar umbrales antes de habilitar alertas productivas.
-
-## Prueba prevista
-
-Desde un equipo que tenga `zabbix_get` y acceso al Agent 2:
-
-```bash
-zabbix_get -s <IP_ORACLE_LINUX> -p 10050 \
-  -k 'oracle.ping["tcp://127.0.0.1:1521","ZABBIX_MON","<CONTRASENA>","<ORACLE_SERVICE>"]'
-```
-
-No escribir la contraseña real en un historial de comandos de producción. Para la validación definitiva se deberá usar un método seguro o una sesión temporal controlada.
+- [ ] Confirmar disponibilidad pasiva del agente.
+- [ ] Crear `ZABBIX_MON` con permisos mínimos.
+- [ ] Confirmar la licencia de Oracle Diagnostics Pack antes de consultar `V$ACTIVE_SESSION_HISTORY`.
+- [ ] Configurar las macros Oracle.
+- [ ] Validar `oracle.ping`.
+- [ ] Confirmar las métricas Oracle en **Monitoreo → Últimos datos**.
 
 ---
 
 # Referencias oficiales
 
 - [Manual actual de Zabbix](https://www.zabbix.com/documentation/current/en/manual)
-- [Instalación de Zabbix desde contenedores](https://www.zabbix.com/documentation/7.4/en/manual/installation/containers)
-- [Agente: comprobaciones activas y pasivas](https://www.zabbix.com/documentation/current/en/manual/concepts/agent)
-- [Plantillas para Zabbix Agent 2](https://www.zabbix.com/documentation/7.4/en/manual/config/templates_out_of_the_box/zabbix_agent2)
+- [Instalación mediante contenedores](https://www.zabbix.com/documentation/7.4/en/manual/installation/containers)
+- [Comprobaciones activas y pasivas](https://www.zabbix.com/documentation/current/en/manual/concepts/agent)
+- [Plantillas para Agent 2](https://www.zabbix.com/documentation/7.4/en/manual/config/templates_out_of_the_box/zabbix_agent2)
 - [Integración oficial de Oracle](https://www.zabbix.com/integrations/oracle)
 - [Plugin Oracle para Agent 2](https://www.zabbix.com/documentation/current/en/manual/appendix/config/zabbix_agent2_plugins/oracle_plugin)
-- [Repositorio oficial para Oracle Linux 8](https://repo.zabbix.com/zabbix/7.4/stable/oracle/8/)
