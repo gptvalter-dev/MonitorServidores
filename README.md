@@ -181,12 +181,21 @@ Antes de evaluar Zabbix, Prometheus, Nagios Core, Icinga, Checkmk Raw u otras op
 
 ---
 
-## Documentos de análisis
+## Documentos de análisis e implementación
 
 - [Comparativo: Zabbix vs. Prometheus](docs/comparativo-zabbix-prometheus.md)
+- [Implementación de Zabbix con Docker, Windows y Oracle Linux](docs/implementacion-zabbix-docker-oracle.md)
+
+## Estado actual de la prueba Zabbix
+
+- Zabbix 7.4 está funcionando en Docker Desktop sobre Windows.
+- El equipo Windows ya reporta métricas mediante Zabbix Agent 2.
+- Oracle Linux 8.10 ya tiene Zabbix Agent 2 instalado desde el repositorio oficial.
+- El sistema operativo Linux está incorporado al monitoreo.
+- El monitoreo de Oracle Database todavía está pendiente de completar y validar.
 
 ---
 
 ## Siguiente paso
 
-Completar primero el **Paso 1: inventario productivo**. Con esa información se podrá preparar una matriz objetiva de evaluación y descartar las herramientas que no cumplan con el entorno real.
+Completar la conexión de la plantilla **Oracle by Zabbix agent 2** mediante un usuario exclusivo de monitoreo, macros seguras y la validación de `oracle.ping`. Después se continuará con el inventario productivo y la matriz objetiva de evaluación.
