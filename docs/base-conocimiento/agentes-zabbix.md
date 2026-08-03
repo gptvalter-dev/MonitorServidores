@@ -153,14 +153,38 @@ systemctl restart zabbix-agent2
 
 ## 4. Interfaz pasiva en timeout
 
-**Síntoma**
+**Síntoma confirmado en Zabbix**
 
-El agente escucha en `10050`, pero la disponibilidad pasiva aparece en rojo o muestra timeout.
+El indicador `ZBX` aparece amarillo y la interfaz pasiva muestra:
 
-**Validación local**
+```text
+No disponible
+Get value from agent failed: cannot establish TCP connection to
+[<IP_ORACLE_LINUX>:10050]: timed out
+```
+
+La prueba desde el servidor Windows donde se ejecuta Zabbix mostró:
+
+```text
+PingSucceeded    : True
+TcpTestSucceeded : False
+```
+
+Esto confirma que el servidor responde en red, pero el puerto TCP `10050` no es alcanzable.
+
+**Causas por revisar**
+
+1. Agent 2 no está escuchando en `10050`.
+2. `firewalld` bloquea el puerto.
+3. La regla de firewall autoriza una IP de origen distinta.
+4. Existe un filtro de red intermedio entre Zabbix Server y Oracle Linux.
+
+**Siguiente validación**
+
+Ejecutar en Oracle Linux:
 
 ```bash
-ss -lntp | grep ':10050'
+sudo ss -lntp | grep ':10050'
 ```
 
 Resultado esperado:
@@ -169,34 +193,52 @@ Resultado esperado:
 LISTEN ... *:10050 ... zabbix_agent2
 ```
 
-Configuración mínima:
+Si no devuelve resultados, revisar:
+
+```bash
+sudo systemctl status zabbix-agent2 --no-pager
+sudo grep -E '^(Server|ServerActive|Hostname|ListenIP|ListenPort)=' \
+  /etc/zabbix/zabbix_agent2.conf
+```
+
+Si el agente escucha, revisar firewall:
+
+```bash
+sudo firewall-cmd --state
+sudo firewall-cmd --get-active-zones
+sudo firewall-cmd --zone=public --list-rich-rules
+```
+
+Configuración mínima del agente:
 
 ```ini
 Server=<IP_ZABBIX_SERVER>
 ListenPort=10050
 ```
 
-**Causa identificada**
-
-`firewalld` bloqueaba el acceso desde Zabbix Server.
-
-**Diagnóstico**
+Regla segura, cuando corresponda:
 
 ```bash
-firewall-cmd --state
-firewall-cmd --get-active-zones
-```
-
-**Solución segura**
-
-Abrir el puerto únicamente para Zabbix Server:
-
-```bash
-firewall-cmd --permanent --zone=public \
+sudo firewall-cmd --permanent --zone=public \
   --add-rich-rule='rule family="ipv4" source address="<IP_ZABBIX_SERVER>/32" port protocol="tcp" port="10050" accept'
 
-firewall-cmd --reload
-firewall-cmd --zone=public --list-rich-rules
+sudo firewall-cmd --reload
 ```
 
-**Estado:** regla aplicada; validar que la interfaz aparezca disponible en Zabbix.
+**Criterio de cierre**
+
+Desde el servidor Zabbix:
+
+```powershell
+Test-NetConnection <IP_ORACLE_LINUX> -Port 10050
+```
+
+Debe mostrar:
+
+```text
+TcpTestSucceeded : True
+```
+
+Después, la interfaz `ZBX` debe aparecer disponible en Zabbix.
+
+**Estado:** pendiente. Punto de reanudación: ejecutar `ss -lntp` en Oracle Linux.
