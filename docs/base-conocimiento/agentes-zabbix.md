@@ -172,38 +172,58 @@ TcpTestSucceeded : False
 
 Esto confirma que el servidor responde en red, pero el puerto TCP `10050` no es alcanzable.
 
-**Validación del servicio en Oracle Linux**
+**Validaciones realizadas**
 
-Se ejecutó:
+En Oracle Linux, Agent 2 sí está escuchando:
 
 ```bash
 sudo ss -lntp | grep ':10050'
 ```
 
-Resultado:
+Resultado confirmado:
 
 ```text
 LISTEN 0 4096 *:10050 *:* users:(("zabbix_agent2",pid=<PID>,fd=<FD>))
 ```
 
-El resultado `*:10050` confirma que Zabbix Agent 2 está iniciado y escucha en todas las interfaces de red. El problema no se encuentra en el servicio ni en `ListenPort`.
+Por lo tanto, el problema no está en el servicio ni en `ListenPort`.
 
-**Causas restantes por revisar**
-
-1. `firewalld` bloquea el puerto.
-2. La regla de firewall autoriza una IP de origen distinta a la utilizada realmente por Zabbix Server.
-3. Existe un filtro de red intermedio entre Zabbix Server y Oracle Linux.
-
-**Siguiente validación**
-
-Identificar el estado y la zona activa de `firewalld`:
+También se confirmó:
 
 ```bash
 sudo firewall-cmd --state
 sudo firewall-cmd --get-active-zones
 ```
 
-Después se deberán revisar las reglas de la zona asociada a la interfaz que contiene `<IP_ORACLE_LINUX>`.
+Resultado:
+
+```text
+running
+public
+  interfaces: ens32
+```
+
+La interfaz de red principal `ens32` está asociada a la zona `public`, por lo que las reglas del puerto `10050` deben revisarse en esa zona.
+
+**Siguiente validación**
+
+```bash
+sudo firewall-cmd --zone=public --list-all
+```
+
+Se debe verificar si aparece:
+
+```text
+ports: 10050/tcp
+```
+
+o una `rich rule` que permita `10050/tcp` desde `<IP_ZABBIX_SERVER>/32`.
+
+**Causas aún posibles**
+
+1. La zona `public` no permite `10050/tcp`.
+2. La regla existe, pero autoriza otra IP de origen.
+3. Existe un filtro de red intermedio entre Zabbix Server y Oracle Linux.
 
 **Criterio de cierre**
 
@@ -221,4 +241,4 @@ TcpTestSucceeded : True
 
 Después, la interfaz `ZBX` debe aparecer disponible en Zabbix.
 
-**Estado:** pendiente. Agent 2 escucha correctamente; continuar con la revisión de `firewalld` y la IP de origen autorizada.
+**Estado:** pendiente. Punto de reanudación: revisar la configuración completa de la zona `public`.
