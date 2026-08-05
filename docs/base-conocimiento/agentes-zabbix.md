@@ -192,35 +192,57 @@ public
   interfaces: ens32
 ```
 
-La zona contiene una regla para `10050/tcp`, pero está limitada a una dirección de origen distinta:
+La zona `public` contiene esta regla:
 
 ```text
-rule family="ipv4" source address="<IP_ORIGEN_CONFIGURADA>/32" port port="10050" protocol="tcp" accept
+rule family="ipv4" source address="192.20.0.10/32" port port="10050" protocol="tcp" accept
 ```
 
-Al ejecutar:
-
-```powershell
-Test-NetConnection <IP_ORACLE_LINUX> -Port 10050 -InformationLevel Detailed
-```
-
-se confirmó que la conexión realmente sale desde otra dirección:
+Sin embargo, Windows utiliza realmente:
 
 ```text
-SourceAddress    : <IP_ORIGEN_REAL>
+SourceAddress    : 192.20.0.12
 TcpTestSucceeded : False
 ```
 
+Para confirmar que los paquetes sí llegan al servidor Oracle Linux, se ejecutó:
+
+```bash
+sudo timeout 60 tcpdump -nni ens32 tcp port 10050 -c 3
+```
+
+Resultado:
+
+```text
+IP 192.20.0.12.<PUERTO_ORIGEN> > 192.0.0.73.10050: Flags [S]
+IP 192.20.0.12.<PUERTO_ORIGEN> > 192.0.0.73.10050: Flags [S]
+IP 192.20.0.12.<PUERTO_ORIGEN> > 192.0.0.73.10050: Flags [S]
+```
+
+Se observaron retransmisiones `SYN` desde `192.20.0.12` sin respuesta `SYN-ACK`.
+
 **Causa identificada**
 
-La regla de `firewalld` autoriza una IP distinta de la IP real de origen del servidor Zabbix. Por eso el ping funciona, pero el puerto `10050/tcp` termina en timeout.
+La conexión llega correctamente por la red hasta Oracle Linux, pero `firewalld` no permite el puerto `10050/tcp` para la IP real de origen `192.20.0.12`. La regla existente autoriza únicamente `192.20.0.10`.
 
-**Procedimiento seguro de corrección**
+Esto no demuestra que una IP haya cambiado; demuestra que la IP configurada en la regla no corresponde al origen real de esta conexión.
 
-1. Agregar primero una regla temporal para `<IP_ORIGEN_REAL>/32`.
-2. Repetir `Test-NetConnection`.
-3. Si devuelve `True`, hacer permanente la regla correcta.
-4. Retirar la regla anterior únicamente después de validar Zabbix.
+**Siguiente paso controlado**
+
+Agregar una regla solo en tiempo de ejecución para validar, sin hacerla permanente todavía:
+
+```bash
+sudo firewall-cmd --zone=public \
+  --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
+```
+
+Después repetir:
+
+```powershell
+Test-NetConnection 192.0.0.73 -Port 10050
+```
+
+Si devuelve `TcpTestSucceeded : True`, validar Zabbix antes de convertir la regla en permanente.
 
 **Criterio de cierre**
 
@@ -230,4 +252,4 @@ TcpTestSucceeded : True
 
 Después, la interfaz `ZBX` debe aparecer disponible en Zabbix.
 
-**Estado:** causa identificada; pendiente probar la regla con la IP real de origen.
+**Estado:** causa confirmada mediante captura de paquetes; pendiente probar la regla temporal para `192.20.0.12/32`.
