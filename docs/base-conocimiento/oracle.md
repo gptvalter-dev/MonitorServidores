@@ -11,14 +11,17 @@ Oracle by Zabbix agent 2
 ```
 
 - La interfaz del agente está configurada en `192.0.0.73:10050`.
+- La interfaz pasiva ya aparece como **Disponible** en Zabbix.
 - La base es no-CDB.
 - El `SERVICE_NAME` confirmado es `SIAL`.
 - El usuario `ZABBIX_MON` ya fue creado.
 - `SELECT_CATALOG_ROLE` y el permiso directo sobre `V_$ACTIVE_SESSION_HISTORY` fueron revocados.
 - No se cuenta con Oracle Diagnostics Pack.
-- La conectividad TCP al agente pasivo ya fue validada temporalmente desde `192.20.0.12`.
-- El agente todavía rechaza la consulta pasiva por la lista de IP autorizadas en `Server=`.
-- Las macros Oracle ya están configuradas en el host, pero la contraseña todavía no ha sido validada funcionalmente.
+- La conectividad TCP al agente pasivo fue validada desde `192.20.0.12`.
+- Agent 2 autoriza consultas pasivas desde `192.20.0.10` y `192.20.0.12`.
+- Las macros Oracle están configuradas en el host.
+- La conexión directa por SQL*Plus con `ZABBIX_MON@//127.0.0.1:1521/SIAL` fue exitosa.
+- `oracle.ping` todavía devuelve `Down (0)`.
 
 ---
 
@@ -49,29 +52,33 @@ Oracle by Zabbix agent 2
 
 **Síntoma**
 
-El host funciona con comprobaciones activas, pero Zabbix solicita una interfaz al agregar la plantilla Oracle.
+El host funcionaba con comprobaciones activas, pero Zabbix requería una interfaz pasiva para la plantilla Oracle.
 
-**Causa**
+**Solución aplicada**
 
-La plantilla Oracle contiene elementos pasivos que Zabbix Server consulta mediante Agent 2.
-
-**Solución**
-
-Agregar al host una interfaz tipo **Agente**:
+Interfaz tipo **Agente**:
 
 ```text
 IP: 192.0.0.73
 Puerto: 10050
 ```
 
-El agente debe tener habilitados:
+En Agent 2:
 
 ```ini
-Server=<IP_ZABBIX_SERVER_AUTORIZADA>
-ListenPort=10050
+Server=192.20.0.10,192.20.0.12
+ServerActive=192.20.0.10:11051
+Hostname=ZAM-SV-073-19C
 ```
 
-**Estado:** conectividad TCP disponible con regla temporal; pendiente corregir `Server=` y hacer permanente la regla correcta de `firewalld`.
+Después de reiniciar `zabbix-agent2`, la interfaz cambió a:
+
+```text
+Estado: Disponible
+Error: ninguno
+```
+
+**Estado:** resuelta. La regla de `firewalld` para `192.20.0.12/32` sigue pendiente de hacerse permanente al finalizar las validaciones.
 
 ---
 
@@ -80,18 +87,6 @@ ListenPort=10050
 **Situación**
 
 La operación habitual identifica la base por SID, pero la plantilla solicita `{$ORACLE.SERVICE}`.
-
-**Diagnóstico**
-
-```sql
-SHOW PARAMETER service_names;
-```
-
-También puede revisarse:
-
-```bash
-lsnrctl status
-```
 
 **Solución**
 
@@ -120,8 +115,6 @@ La organización no cuenta con Oracle Diagnostics Pack.
 
 **Acción aplicada**
 
-Se revocaron ambos permisos:
-
 ```sql
 REVOKE SELECT_CATALOG_ROLE FROM ZABBIX_MON;
 REVOKE SELECT ON SYS.V_$ACTIVE_SESSION_HISTORY FROM ZABBIX_MON;
@@ -129,7 +122,7 @@ REVOKE SELECT ON SYS.V_$ACTIVE_SESSION_HISTORY FROM ZABBIX_MON;
 
 Los permisos explícitos necesarios sobre las demás vistas de monitoreo se conservan.
 
-**Estado:** resuelta.
+**Estado:** resuelta. La plantilla debe clonarse posteriormente para excluir consultas relacionadas con ASH.
 
 ---
 
@@ -144,33 +137,56 @@ En **Recopilación de datos → Equipos → ZAM-SV-073-19C → Macros** se confi
 {$ORACLE.PASSWORD}   = <secreto>
 ```
 
-La estructura de las macros es correcta:
+La estructura visual de las macros es correcta.
 
-- `CONNSTRING` apunta al listener Oracle local del mismo servidor.
-- `SERVICE` usa `SERVICE_NAME`, no SID.
-- `USER` corresponde al usuario de monitoreo.
-- `PASSWORD` está almacenada como secreto en Zabbix.
+---
 
-La captura solo confirma que existe un valor de contraseña; no demuestra que sea correcto.
+## 6. Validación directa de credenciales
 
-**Estado:** configuración visual correcta; validación funcional pendiente.
+Se ejecutó desde Oracle Linux:
+
+```bash
+sqlplus -L ZABBIX_MON@//127.0.0.1:1521/SIAL
+```
+
+Resultado:
+
+```text
+Connected to:
+Oracle Database 19c Enterprise Edition
+```
+
+Esto confirma, usando la misma contraseña introducida manualmente:
+
+- Listener disponible en `127.0.0.1:1521`.
+- `SERVICE_NAME` `SIAL` válido.
+- Usuario `ZABBIX_MON` válido.
+- Contraseña válida.
+- Cuenta habilitada para iniciar sesión.
+
+Sin embargo, en Zabbix:
+
+```text
+Oracle by Zabbix agent 2: Ping
+Último valor: Down (0)
+```
+
+Por lo tanto, el problema restante ya no apunta inicialmente al listener, servicio o credenciales Oracle. Debe revisarse el contexto de ejecución del complemento Oracle de Agent 2 y su registro de errores.
 
 ---
 
 ## Punto de reanudación
 
-Antes de concluir que las credenciales Oracle son incorrectas debe resolverse el rechazo del agente:
+Revisar errores del complemento Oracle inmediatamente después de ejecutar `oracle.ping`:
 
-```text
-Received empty response from Zabbix Agent ... Assuming that agent dropped connection because of access permissions.
+```bash
+sudo grep -iE 'oracle|ORA-|plugin' /var/log/zabbix/zabbix_agent2.log | tail -n 50
 ```
 
-Ese mensaje corresponde al control de acceso del agente, no a una autenticación Oracle fallida.
+Después se determinará si existe:
 
-Después de corregir `Server=` se continuará con:
-
-1. Validación del elemento `oracle.ping`.
-2. Confirmación funcional de usuario y contraseña.
-3. Copia de la plantilla Oracle para excluir consultas ASH.
-4. Revisión de permisos exactos requeridos.
-5. Validación de métricas y elementos no soportados.
+1. Error del complemento Oracle.
+2. Diferencia entre la contraseña guardada en la macro y la probada manualmente.
+3. Problema de formato de conexión en Agent 2.
+4. Dependencia o configuración faltante del complemento.
+5. Error de permisos al ejecutar las consultas de la plantilla.
