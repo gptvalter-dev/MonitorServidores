@@ -11,37 +11,22 @@ Listen failed: listen tcp 0.0.0.0:10050
 
 **Causa identificada**
 
-El puerto `10050` estaba reservado por Windows. Además, la línea modificada permanecía comentada:
-
-```ini
-# ListenPort=11050
-```
+El puerto `10050` estaba reservado por Windows y la línea modificada permanecía comentada.
 
 **Solución**
 
-Editar:
-
-```text
-C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf
-```
-
-Configurar sin `#`:
+Configurar en `C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf`:
 
 ```ini
 ListenPort=11050
 ```
 
-Validar:
+Validar e iniciar:
 
 ```powershell
 & "C:\Program Files\Zabbix Agent 2\zabbix_agent2.exe" `
   -c "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf" `
   -T
-```
-
-Iniciar:
-
-```powershell
 Start-Service "Zabbix Agent 2"
 Get-Service "Zabbix Agent 2"
 ```
@@ -60,26 +45,15 @@ Get-Service "Zabbix Agent 2"
 
 **Síntoma**
 
-El binario mostraba la versión y validaba la configuración:
-
-```bash
-/opt/zabbix/sbin/zabbix_agentd -V
-/opt/zabbix/sbin/zabbix_agentd -c /opt/zabbix/conf/zabbix_agentd.conf -T
-```
-
-Pero al iniciar:
+El binario mostraba la versión y validaba la configuración, pero al iniciar terminaba con:
 
 ```text
 Segmentation fault (core dumped)
 ```
 
-**Conclusión**
-
-La sintaxis de configuración era válida; el fallo ocurría durante la inicialización en tiempo de ejecución. Los incidentes antiguos revisados para Zabbix 2.4 y 4.4 no correspondían directamente a la versión 7.4 utilizada.
-
 **Solución aplicada**
 
-Instalar Zabbix Agent 2 desde el repositorio oficial para Oracle Linux 8:
+Se sustituyó el binario manual por Zabbix Agent 2 desde el repositorio oficial:
 
 ```bash
 rpm -Uvh https://repo.zabbix.com/zabbix/7.4/release/oracle/8/noarch/zabbix-release-latest-7.4.el8.noarch.rpm
@@ -88,179 +62,149 @@ dnf makecache
 dnf install -y zabbix-agent2
 ```
 
-**Estado:** resuelta mediante sustitución del binario manual.
+**Estado:** resuelta.
 
 ---
 
 ## 3. Comprobaciones activas sin datos
 
-**Síntomas posibles**
-
-```text
-cannot connect to [<IP_ZABBIX_SERVER>:11051]
-no active checks on server
-host [<HOSTNAME_LINUX>] not found
-```
-
-**Diagnóstico de conectividad**
-
-```bash
-timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/11051' \
-  && echo "CONEXION OK" \
-  || echo "SIN CONEXION"
-```
-
-Revisar logs:
-
-```bash
-tail -n 50 /var/log/zabbix/zabbix_agent2.log
-journalctl -u zabbix-agent2 -n 50 --no-pager
-```
-
 **Causas identificadas**
 
-- `Hostname` no coincidía exactamente con el campo **Nombre del equipo** en Zabbix.
+- `Hostname` no coincidía exactamente con el nombre técnico del equipo en Zabbix.
 - La plantilla `Linux by Zabbix agent active` no estaba vinculada directamente al host.
 - El agente aún no había actualizado su configuración activa.
 
-**Solución**
-
-Configurar:
+**Configuración validada**
 
 ```ini
-ServerActive=<IP_ZABBIX_SERVER>:11051
-Hostname=<HOSTNAME_LINUX>
+ServerActive=192.20.0.10:11051
+Hostname=ZAM-SV-073-19C
 ```
 
 En Zabbix:
 
 ```text
-Nombre del equipo: <HOSTNAME_LINUX>
+Nombre del equipo: ZAM-SV-073-19C
 Plantilla: Linux by Zabbix agent active
 ```
-
-Reiniciar:
-
-```bash
-systemctl restart zabbix-agent2
-```
-
-**Nota:** para una plantilla completamente activa, la interfaz del host puede permanecer vacía.
 
 **Estado:** resuelta.
 
 ---
 
-## 4. Interfaz pasiva en timeout
+## 4. Interfaz pasiva en timeout y rechazo por permisos
 
-**Síntoma confirmado en Zabbix**
+**Síntomas**
 
-El indicador `ZBX` aparece amarillo y la interfaz pasiva muestra:
+Primero Zabbix mostró:
 
 ```text
-No disponible
 Get value from agent failed: cannot establish TCP connection to
-[<IP_ORACLE_LINUX>:10050]: timed out
+[192.0.0.73:10050]: timed out
 ```
 
-La prueba desde Windows mostró:
+Después de abrir el puerto, mostró:
 
 ```text
-PingSucceeded    : True
-TcpTestSucceeded : False
+Received empty response from Zabbix Agent at [192.0.0.73].
+Assuming that agent dropped connection because of access permissions.
 ```
 
-**Validaciones realizadas**
+### Diagnóstico de red
 
-Agent 2 está escuchando correctamente en todas las interfaces:
+Agent 2 sí escuchaba en todas las interfaces:
 
 ```bash
 sudo ss -lntp | grep ':10050'
 ```
 
-Resultado:
-
 ```text
 LISTEN 0 4096 *:10050 *:* users:(("zabbix_agent2",pid=<PID>,fd=<FD>))
 ```
 
-`firewalld` está activo y `ens32` pertenece a la zona `public`:
+La interfaz `ens32` pertenecía a la zona `public`. La regla existente autorizaba únicamente:
 
 ```text
-running
-public
-  interfaces: ens32
+192.20.0.10/32 -> 10050/tcp
 ```
 
-La zona `public` contiene esta regla:
-
-```text
-rule family="ipv4" source address="192.20.0.10/32" port port="10050" protocol="tcp" accept
-```
-
-Sin embargo, Windows utiliza realmente:
+La prueba desde Windows confirmó que la conexión salía desde:
 
 ```text
 SourceAddress    : 192.20.0.12
 TcpTestSucceeded : False
 ```
 
-Para confirmar que los paquetes sí llegan al servidor Oracle Linux, se ejecutó:
+Una captura en Oracle Linux confirmó la llegada de los paquetes SYN:
 
 ```bash
 sudo timeout 60 tcpdump -nni ens32 tcp port 10050 -c 3
 ```
 
-Resultado:
-
 ```text
-IP 192.20.0.12.<PUERTO_ORIGEN> > 192.0.0.73.10050: Flags [S]
-IP 192.20.0.12.<PUERTO_ORIGEN> > 192.0.0.73.10050: Flags [S]
-IP 192.20.0.12.<PUERTO_ORIGEN> > 192.0.0.73.10050: Flags [S]
+IP 192.20.0.12.<PUERTO> > 192.0.0.73.10050: Flags [S]
 ```
 
-Se observaron retransmisiones `SYN` desde `192.20.0.12` sin respuesta `SYN-ACK`.
+### Corrección de `firewalld`
 
-**Causa identificada**
-
-La conexión llega correctamente por la red hasta Oracle Linux, pero `firewalld` no permite el puerto `10050/tcp` para la IP real de origen `192.20.0.12`. La regla existente autoriza únicamente `192.20.0.10`.
-
-Esto no demuestra que una IP haya cambiado; demuestra que la IP configurada en la regla no corresponde al origen real de esta conexión.
-
-**Prueba controlada aplicada**
-
-Se agregó una regla solo en tiempo de ejecución:
+Se agregó una regla temporal para validar el origen real:
 
 ```bash
 sudo firewall-cmd --zone=public \
   --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
 ```
 
-Después se repitió:
-
-```powershell
-Test-NetConnection 192.0.0.73 -Port 10050
-```
-
-Resultado confirmado:
+Resultado:
 
 ```text
 TcpTestSucceeded : True
 ```
 
-Esto demuestra que el bloqueo estaba en la regla de `firewalld` y que `192.20.0.12` es una IP de origen válida para alcanzar el agente pasivo.
+### Corrección de autorización en Agent 2
 
-**Siguiente validación**
+La configuración original solo permitía:
 
-Antes de hacer permanente la regla, comprobar en la interfaz web de Zabbix si el indicador `ZBX` cambia a disponible o si aparece un error de autorización del agente.
+```ini
+Server=192.20.0.10
+```
 
-Si Zabbix continúa rechazando la consulta, revisar el parámetro `Server=` de `/etc/zabbix/zabbix_agent2.conf` y los logs del agente para confirmar la IP de origen que debe estar autorizada.
+Se autorizó también la IP real de origen:
 
-**Criterio de cierre**
+```ini
+Server=192.20.0.10,192.20.0.12
+```
 
-1. `TcpTestSucceeded : True`.
-2. Interfaz `ZBX` disponible en Zabbix.
-3. Regla correcta guardada como permanente.
-4. Regla anterior retirada únicamente después de validar que ya no es necesaria.
+Después se reinició y validó el servicio:
 
-**Estado:** conectividad TCP validada con regla temporal; pendiente validar la consulta pasiva completa desde Zabbix.
+```bash
+sudo systemctl restart zabbix-agent2
+sudo systemctl is-active zabbix-agent2
+```
+
+```text
+active
+```
+
+### Resultado en Zabbix
+
+La interfaz pasiva cambió a:
+
+```text
+192.0.0.73:10050
+Estado: Disponible
+Error: ninguno
+```
+
+### Pendiente antes del cierre definitivo
+
+La regla de `firewalld` para `192.20.0.12/32` sigue siendo temporal. Debe hacerse permanente después de completar la validación funcional de `oracle.ping`:
+
+```bash
+sudo firewall-cmd --permanent --zone=public \
+  --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
+sudo firewall-cmd --reload
+```
+
+La regla anterior para `192.20.0.10/32` solo debe retirarse después de confirmar que no corresponde a otro Zabbix Server o proxy.
+
+**Estado:** acceso pasivo resuelto; pendiente persistir la regla de firewall cuando concluya la prueba Oracle.
