@@ -22,6 +22,7 @@ Oracle by Zabbix agent 2
 - Las macros Oracle están configuradas en el host.
 - La conexión directa por SQL*Plus con `ZABBIX_MON@//127.0.0.1:1521/SIAL` fue exitosa.
 - `oracle.ping` devuelve `Down (0)` porque el proceso `zabbix-agent2` no localiza `libclntsh.so`.
+- La biblioteca Oracle Client sí existe en el `ORACLE_HOME`; no se requiere instalar Instant Client por ahora.
 
 ---
 
@@ -186,25 +187,27 @@ DPI-1047: Cannot locate a 64-bit Oracle Client library:
 
 **Causa identificada**
 
-El complemento Oracle de Agent 2 requiere las bibliotecas cliente de Oracle. SQL*Plus funciona bajo el usuario `oracle` porque su sesión tiene el entorno de Oracle configurado, pero el servicio `zabbix-agent2`, ejecutado por `systemd`, no está encontrando `libclntsh.so` en la ruta de bibliotecas del sistema.
+El complemento Oracle de Agent 2 requiere las bibliotecas cliente de Oracle. SQL*Plus funciona bajo el usuario `oracle` porque su sesión tiene el entorno de Oracle configurado, pero el servicio `zabbix-agent2`, ejecutado por `systemd`, no está encontrando `libclntsh.so` en la ruta de bibliotecas del proceso.
 
 Esto descarta, por el momento, un error de usuario, contraseña, listener o `SERVICE_NAME`.
 
-**Diagnóstico pendiente**
+**Biblioteca localizada**
 
-Localizar la biblioteca existente antes de instalar cualquier paquete:
-
-```bash
-sudo find / -type f -name 'libclntsh.so*' 2>/dev/null | head -20
+```text
+/u01/app/oracle/product/19.3.0/dbhome_1/lib/libclntsh.so.19.1
 ```
 
-Según el resultado se decidirá entre:
+También se confirmó el enlace requerido:
 
-1. Registrar el directorio de bibliotecas Oracle en `/etc/ld.so.conf.d/` y ejecutar `ldconfig`.
-2. Definir el entorno requerido para el servicio `zabbix-agent2`.
-3. Instalar Oracle Instant Client solo si la biblioteca realmente no existe.
+```text
+/u01/app/oracle/product/19.3.0/dbhome_1/lib/libclntsh.so -> libclntsh.so.19.1
+```
 
-**Estado:** causa identificada; pendiente localizar `libclntsh.so`.
+Los enlaces y permisos del archivo son válidos. La copia encontrada bajo `/home/oracle/Downloads/...` corresponde a archivos de parche y no debe utilizarse.
+
+Por lo tanto, no se instalará Oracle Instant Client. El siguiente diagnóstico es revisar el entorno que `systemd` entrega al servicio `zabbix-agent2`, especialmente `ORACLE_HOME` y `LD_LIBRARY_PATH`.
+
+**Estado:** biblioteca y enlace confirmados; pendiente revisar el entorno efectivo del servicio.
 
 ---
 
@@ -213,7 +216,7 @@ Según el resultado se decidirá entre:
 Ejecutar:
 
 ```bash
-sudo find / -type f -name 'libclntsh.so*' 2>/dev/null | head -20
+sudo systemctl show zabbix-agent2 -p Environment
 ```
 
-No instalar Instant Client ni modificar variables de entorno hasta conocer la ubicación real de la biblioteca.
+No modificar todavía el unit file ni registrar rutas globales con `ldconfig` hasta confirmar el entorno actual del servicio.
