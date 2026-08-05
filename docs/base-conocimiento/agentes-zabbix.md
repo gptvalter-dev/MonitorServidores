@@ -172,58 +172,38 @@ TcpTestSucceeded : False
 
 Esto confirma que el servidor responde en red, pero el puerto TCP `10050` no es alcanzable.
 
-**Causas por revisar**
+**Validación del servicio en Oracle Linux**
 
-1. Agent 2 no está escuchando en `10050`.
-2. `firewalld` bloquea el puerto.
-3. La regla de firewall autoriza una IP de origen distinta.
-4. Existe un filtro de red intermedio entre Zabbix Server y Oracle Linux.
-
-**Siguiente validación**
-
-Ejecutar en Oracle Linux:
+Se ejecutó:
 
 ```bash
 sudo ss -lntp | grep ':10050'
 ```
 
-Resultado esperado:
+Resultado:
 
 ```text
-LISTEN ... *:10050 ... zabbix_agent2
+LISTEN 0 4096 *:10050 *:* users:(("zabbix_agent2",pid=<PID>,fd=<FD>))
 ```
 
-Si no devuelve resultados, revisar:
+El resultado `*:10050` confirma que Zabbix Agent 2 está iniciado y escucha en todas las interfaces de red. El problema no se encuentra en el servicio ni en `ListenPort`.
 
-```bash
-sudo systemctl status zabbix-agent2 --no-pager
-sudo grep -E '^(Server|ServerActive|Hostname|ListenIP|ListenPort)=' \
-  /etc/zabbix/zabbix_agent2.conf
-```
+**Causas restantes por revisar**
 
-Si el agente escucha, revisar firewall:
+1. `firewalld` bloquea el puerto.
+2. La regla de firewall autoriza una IP de origen distinta a la utilizada realmente por Zabbix Server.
+3. Existe un filtro de red intermedio entre Zabbix Server y Oracle Linux.
+
+**Siguiente validación**
+
+Identificar el estado y la zona activa de `firewalld`:
 
 ```bash
 sudo firewall-cmd --state
 sudo firewall-cmd --get-active-zones
-sudo firewall-cmd --zone=public --list-rich-rules
 ```
 
-Configuración mínima del agente:
-
-```ini
-Server=<IP_ZABBIX_SERVER>
-ListenPort=10050
-```
-
-Regla segura, cuando corresponda:
-
-```bash
-sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule='rule family="ipv4" source address="<IP_ZABBIX_SERVER>/32" port protocol="tcp" port="10050" accept'
-
-sudo firewall-cmd --reload
-```
+Después se deberán revisar las reglas de la zona asociada a la interfaz que contiene `<IP_ORACLE_LINUX>`.
 
 **Criterio de cierre**
 
@@ -241,4 +221,4 @@ TcpTestSucceeded : True
 
 Después, la interfaz `ZBX` debe aparecer disponible en Zabbix.
 
-**Estado:** pendiente. Punto de reanudación: ejecutar `ss -lntp` en Oracle Linux.
+**Estado:** pendiente. Agent 2 escucha correctamente; continuar con la revisión de `firewalld` y la IP de origen autorizada.
