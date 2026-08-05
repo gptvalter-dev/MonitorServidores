@@ -227,29 +227,40 @@ La conexión llega correctamente por la red hasta Oracle Linux, pero `firewalld`
 
 Esto no demuestra que una IP haya cambiado; demuestra que la IP configurada en la regla no corresponde al origen real de esta conexión.
 
-**Siguiente paso controlado**
+**Prueba controlada aplicada**
 
-Agregar una regla solo en tiempo de ejecución para validar, sin hacerla permanente todavía:
+Se agregó una regla solo en tiempo de ejecución:
 
 ```bash
 sudo firewall-cmd --zone=public \
   --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
 ```
 
-Después repetir:
+Después se repitió:
 
 ```powershell
 Test-NetConnection 192.0.0.73 -Port 10050
 ```
 
-Si devuelve `TcpTestSucceeded : True`, validar Zabbix antes de convertir la regla en permanente.
-
-**Criterio de cierre**
+Resultado confirmado:
 
 ```text
 TcpTestSucceeded : True
 ```
 
-Después, la interfaz `ZBX` debe aparecer disponible en Zabbix.
+Esto demuestra que el bloqueo estaba en la regla de `firewalld` y que `192.20.0.12` es una IP de origen válida para alcanzar el agente pasivo.
 
-**Estado:** causa confirmada mediante captura de paquetes; pendiente probar la regla temporal para `192.20.0.12/32`.
+**Siguiente validación**
+
+Antes de hacer permanente la regla, comprobar en la interfaz web de Zabbix si el indicador `ZBX` cambia a disponible o si aparece un error de autorización del agente.
+
+Si Zabbix continúa rechazando la consulta, revisar el parámetro `Server=` de `/etc/zabbix/zabbix_agent2.conf` y los logs del agente para confirmar la IP de origen que debe estar autorizada.
+
+**Criterio de cierre**
+
+1. `TcpTestSucceeded : True`.
+2. Interfaz `ZBX` disponible en Zabbix.
+3. Regla correcta guardada como permanente.
+4. Regla anterior retirada únicamente después de validar que ya no es necesaria.
+
+**Estado:** conectividad TCP validada con regla temporal; pendiente validar la consulta pasiva completa desde Zabbix.
