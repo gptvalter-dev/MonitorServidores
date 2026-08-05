@@ -21,7 +21,7 @@ Oracle by Zabbix agent 2
 - Agent 2 autoriza consultas pasivas desde `192.20.0.10` y `192.20.0.12`.
 - Las macros Oracle están configuradas en el host.
 - La conexión directa por SQL*Plus con `ZABBIX_MON@//127.0.0.1:1521/SIAL` fue exitosa.
-- `oracle.ping` todavía devuelve `Down (0)`.
+- `oracle.ping` devuelve `Down (0)` porque el proceso `zabbix-agent2` no localiza `libclntsh.so`.
 
 ---
 
@@ -164,29 +164,56 @@ Esto confirma, usando la misma contraseña introducida manualmente:
 - Contraseña válida.
 - Cuenta habilitada para iniciar sesión.
 
-Sin embargo, en Zabbix:
+---
+
+## 7. `oracle.ping` devuelve `Down (0)` por `DPI-1047`
+
+**Síntoma**
+
+En Zabbix:
 
 ```text
 Oracle by Zabbix agent 2: Ping
 Último valor: Down (0)
 ```
 
-Por lo tanto, el problema restante ya no apunta inicialmente al listener, servicio o credenciales Oracle. Debe revisarse el contexto de ejecución del complemento Oracle de Agent 2 y su registro de errores.
+En `/var/log/zabbix/zabbix_agent2.log`:
+
+```text
+DPI-1047: Cannot locate a 64-bit Oracle Client library:
+"libclntsh.so: cannot open shared object file: No such file or directory"
+```
+
+**Causa identificada**
+
+El complemento Oracle de Agent 2 requiere las bibliotecas cliente de Oracle. SQL*Plus funciona bajo el usuario `oracle` porque su sesión tiene el entorno de Oracle configurado, pero el servicio `zabbix-agent2`, ejecutado por `systemd`, no está encontrando `libclntsh.so` en la ruta de bibliotecas del sistema.
+
+Esto descarta, por el momento, un error de usuario, contraseña, listener o `SERVICE_NAME`.
+
+**Diagnóstico pendiente**
+
+Localizar la biblioteca existente antes de instalar cualquier paquete:
+
+```bash
+sudo find / -type f -name 'libclntsh.so*' 2>/dev/null | head -20
+```
+
+Según el resultado se decidirá entre:
+
+1. Registrar el directorio de bibliotecas Oracle en `/etc/ld.so.conf.d/` y ejecutar `ldconfig`.
+2. Definir el entorno requerido para el servicio `zabbix-agent2`.
+3. Instalar Oracle Instant Client solo si la biblioteca realmente no existe.
+
+**Estado:** causa identificada; pendiente localizar `libclntsh.so`.
 
 ---
 
 ## Punto de reanudación
 
-Revisar errores del complemento Oracle inmediatamente después de ejecutar `oracle.ping`:
+Ejecutar:
 
 ```bash
-sudo grep -iE 'oracle|ORA-|plugin' /var/log/zabbix/zabbix_agent2.log | tail -n 50
+sudo find / -type f -name 'libclntsh.so*' 2>/dev/null | head -20
 ```
 
-Después se determinará si existe:
-
-1. Error del complemento Oracle.
-2. Diferencia entre la contraseña guardada en la macro y la probada manualmente.
-3. Problema de formato de conexión en Agent 2.
-4. Dependencia o configuración faltante del complemento.
-5. Error de permisos al ejecutar las consultas de la plantilla.
+No instalar Instant Client ni modificar variables de entorno hasta conocer la ubicación real de la biblioteca.
