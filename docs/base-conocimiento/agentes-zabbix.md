@@ -163,39 +163,28 @@ Get value from agent failed: cannot establish TCP connection to
 [<IP_ORACLE_LINUX>:10050]: timed out
 ```
 
-La prueba desde el servidor Windows donde se ejecuta Zabbix mostró:
+La prueba desde Windows mostró:
 
 ```text
 PingSucceeded    : True
 TcpTestSucceeded : False
 ```
 
-Esto confirma que el servidor responde en red, pero el puerto TCP `10050` no es alcanzable.
-
 **Validaciones realizadas**
 
-En Oracle Linux, Agent 2 sí está escuchando:
+Agent 2 está escuchando correctamente en todas las interfaces:
 
 ```bash
 sudo ss -lntp | grep ':10050'
 ```
 
-Resultado confirmado:
+Resultado:
 
 ```text
 LISTEN 0 4096 *:10050 *:* users:(("zabbix_agent2",pid=<PID>,fd=<FD>))
 ```
 
-Por lo tanto, el problema no está en el servicio ni en `ListenPort`.
-
-También se confirmó:
-
-```bash
-sudo firewall-cmd --state
-sudo firewall-cmd --get-active-zones
-```
-
-Resultado:
+`firewalld` está activo y `ens32` pertenece a la zona `public`:
 
 ```text
 running
@@ -203,37 +192,37 @@ public
   interfaces: ens32
 ```
 
-La interfaz de red principal `ens32` está asociada a la zona `public`, por lo que las reglas del puerto `10050` deben revisarse en esa zona.
-
-**Siguiente validación**
-
-```bash
-sudo firewall-cmd --zone=public --list-all
-```
-
-Se debe verificar si aparece:
+La zona contiene una regla para `10050/tcp`, pero está limitada a una dirección de origen distinta:
 
 ```text
-ports: 10050/tcp
+rule family="ipv4" source address="<IP_ORIGEN_CONFIGURADA>/32" port port="10050" protocol="tcp" accept
 ```
 
-o una `rich rule` que permita `10050/tcp` desde `<IP_ZABBIX_SERVER>/32`.
-
-**Causas aún posibles**
-
-1. La zona `public` no permite `10050/tcp`.
-2. La regla existe, pero autoriza otra IP de origen.
-3. Existe un filtro de red intermedio entre Zabbix Server y Oracle Linux.
-
-**Criterio de cierre**
-
-Desde el servidor Zabbix:
+Al ejecutar:
 
 ```powershell
-Test-NetConnection <IP_ORACLE_LINUX> -Port 10050
+Test-NetConnection <IP_ORACLE_LINUX> -Port 10050 -InformationLevel Detailed
 ```
 
-Debe mostrar:
+se confirmó que la conexión realmente sale desde otra dirección:
+
+```text
+SourceAddress    : <IP_ORIGEN_REAL>
+TcpTestSucceeded : False
+```
+
+**Causa identificada**
+
+La regla de `firewalld` autoriza una IP distinta de la IP real de origen del servidor Zabbix. Por eso el ping funciona, pero el puerto `10050/tcp` termina en timeout.
+
+**Procedimiento seguro de corrección**
+
+1. Agregar primero una regla temporal para `<IP_ORIGEN_REAL>/32`.
+2. Repetir `Test-NetConnection`.
+3. Si devuelve `True`, hacer permanente la regla correcta.
+4. Retirar la regla anterior únicamente después de validar Zabbix.
+
+**Criterio de cierre**
 
 ```text
 TcpTestSucceeded : True
@@ -241,4 +230,4 @@ TcpTestSucceeded : True
 
 Después, la interfaz `ZBX` debe aparecer disponible en Zabbix.
 
-**Estado:** pendiente. Punto de reanudación: revisar la configuración completa de la zona `public`.
+**Estado:** causa identificada; pendiente probar la regla con la IP real de origen.
