@@ -10,13 +10,15 @@ Linux by Zabbix agent active
 Oracle by Zabbix agent 2
 ```
 
-- La interfaz del agente está configurada en `<IP_ORACLE_LINUX>:10050`.
+- La interfaz del agente está configurada en `192.0.0.73:10050`.
 - La base es no-CDB.
-- El `SERVICE_NAME` está identificado.
+- El `SERVICE_NAME` confirmado es `SIAL`.
 - El usuario `ZABBIX_MON` ya fue creado.
 - `SELECT_CATALOG_ROLE` y el permiso directo sobre `V_$ACTIVE_SESSION_HISTORY` fueron revocados.
 - No se cuenta con Oracle Diagnostics Pack.
-- Las macros Oracle todavía no deben configurarse hasta resolver la comunicación pasiva y preparar la plantilla sin ASH.
+- La conectividad TCP al agente pasivo ya fue validada temporalmente desde `192.20.0.12`.
+- El agente todavía rechaza la consulta pasiva por la lista de IP autorizadas en `Server=`.
+- Las macros Oracle ya están configuradas en el host, pero la contraseña todavía no ha sido validada funcionalmente.
 
 ---
 
@@ -58,18 +60,18 @@ La plantilla Oracle contiene elementos pasivos que Zabbix Server consulta median
 Agregar al host una interfaz tipo **Agente**:
 
 ```text
-IP: <IP_ORACLE_LINUX>
+IP: 192.0.0.73
 Puerto: 10050
 ```
 
 El agente debe tener habilitados:
 
 ```ini
-Server=<IP_ZABBIX_SERVER>
+Server=<IP_ZABBIX_SERVER_AUTORIZADA>
 ListenPort=10050
 ```
 
-**Estado:** configurada, pero actualmente no disponible por timeout. Consultar [Agentes Zabbix: interfaz pasiva en timeout](agentes-zabbix.md#4-interfaz-pasiva-en-timeout).
+**Estado:** conectividad TCP disponible con regla temporal; pendiente corregir `Server=` y hacer permanente la regla correcta de `firewalld`.
 
 ---
 
@@ -93,9 +95,13 @@ lsnrctl status
 
 **Solución**
 
-Configurar `{$ORACLE.SERVICE}` con el `SERVICE_NAME` publicado por el listener, no asumir que coincide con el SID.
+Configurar `{$ORACLE.SERVICE}` con el `SERVICE_NAME` publicado por el listener. Para este servidor:
 
-**Estado:** identificado.
+```text
+SIAL
+```
+
+**Estado:** resuelta.
 
 ---
 
@@ -127,33 +133,44 @@ Los permisos explícitos necesarios sobre las demás vistas de monitoreo se cons
 
 ---
 
+## 5. Macros Oracle configuradas en el host
+
+En **Recopilación de datos → Equipos → ZAM-SV-073-19C → Macros** se confirmaron:
+
+```text
+{$ORACLE.CONNSTRING} = tcp://127.0.0.1:1521
+{$ORACLE.SERVICE}    = SIAL
+{$ORACLE.USER}       = ZABBIX_MON
+{$ORACLE.PASSWORD}   = <secreto>
+```
+
+La estructura de las macros es correcta:
+
+- `CONNSTRING` apunta al listener Oracle local del mismo servidor.
+- `SERVICE` usa `SERVICE_NAME`, no SID.
+- `USER` corresponde al usuario de monitoreo.
+- `PASSWORD` está almacenada como secreto en Zabbix.
+
+La captura solo confirma que existe un valor de contraseña; no demuestra que sea correcto.
+
+**Estado:** configuración visual correcta; validación funcional pendiente.
+
+---
+
 ## Punto de reanudación
 
-Antes de configurar las macros o probar la conexión Oracle, debe resolverse el acceso pasivo al agente.
-
-Última validación realizada desde el servidor Windows:
+Antes de concluir que las credenciales Oracle son incorrectas debe resolverse el rechazo del agente:
 
 ```text
-PingSucceeded    : True
-TcpTestSucceeded : False
+Received empty response from Zabbix Agent ... Assuming that agent dropped connection because of access permissions.
 ```
 
-Siguiente comando, en Oracle Linux:
+Ese mensaje corresponde al control de acceso del agente, no a una autenticación Oracle fallida.
 
-```bash
-sudo ss -lntp | grep ':10050'
-```
+Después de corregir `Server=` se continuará con:
 
-No avanzar a macros, credenciales ni `oracle.ping` hasta confirmar:
-
-```text
-TcpTestSucceeded : True
-```
-
-Después de cerrar la comunicación pasiva se continuará con:
-
-1. Copia de la plantilla Oracle sin consultas ASH.
-2. Configuración de macros.
-3. Prueba de conexión del usuario `ZABBIX_MON`.
-4. Validación de `oracle.ping`.
-5. Revisión de métricas y elementos no soportados.
+1. Validación del elemento `oracle.ping`.
+2. Confirmación funcional de usuario y contraseña.
+3. Copia de la plantilla Oracle para excluir consultas ASH.
+4. Revisión de permisos exactos requeridos.
+5. Validación de métricas y elementos no soportados.
