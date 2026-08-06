@@ -1,48 +1,127 @@
-# Exploración de Zabbix con Docker, Oracle Linux y Oracle Database
+# Guía de exploración, instalación y parametrización de Zabbix
 
 > Fecha de corte: **6 de agosto de 2026**  
-> Estado: **exploración técnica en curso**. La plataforma base y el monitoreo pasivo de Oracle Database funcionan; las comprobaciones activas de Linux, la interpretación de métricas, las métricas personalizadas, las notificaciones y el monitoreo de aplicaciones siguen pendientes de completar.
+> Estado: **exploración técnica en curso**. El servidor Zabbix, el agente de Oracle Linux, las comprobaciones activas de Linux y el monitoreo básico de Oracle Database ya funcionan. Continúan pendientes la interpretación completa de métricas, la parametrización de métricas personalizadas, las notificaciones y el monitoreo de aplicaciones.
 
-Las incidencias y soluciones detalladas se encuentran en la [base de conocimiento](base-conocimiento/README.md). Esta guía concentra el procedimiento reproducible, el estado actual y los criterios para concluir el demo.
+Esta guía concentra el procedimiento completo aprendido durante el laboratorio. Está escrita para que una persona sin experiencia previa en Zabbix pueda repetir la instalación, entender qué está configurando, validar cada paso y diagnosticar los errores más frecuentes.
+
+Las incidencias detalladas se documentan en la [base de conocimiento](base-conocimiento/README.md).
 
 ---
 
-## 1. Objetivo del demo
+# 1. Objetivo del laboratorio
 
-El propósito de esta prueba no es desplegar todavía una plataforma productiva. Se busca determinar si Zabbix puede utilizarse para monitorear de forma centralizada:
+El propósito de esta prueba es determinar si Zabbix puede utilizarse para monitorear de forma centralizada:
 
 1. Sistemas operativos de servidores.
 2. Bases de datos Oracle.
-3. Aplicaciones, servicios, puertos, procesos y endpoints.
+3. Aplicaciones, servicios, procesos, puertos y endpoints.
 
-La exploración también debe determinar:
+La prueba también debe permitir responder:
 
-- Qué métricas se obtienen mediante plantillas estándar.
-- Cómo interpretar las métricas recopiladas.
-- Qué umbrales deben ajustarse para cada ambiente.
+- Qué métricas se obtienen con las plantillas estándar.
+- Cómo interpretar cada métrica.
+- Qué valores son normales para cada servidor.
+- Qué umbrales deben cambiarse.
 - Cómo crear métricas personalizadas.
-- Cómo configurar avisos y escalamiento.
-- Qué diferencias existirán entre el laboratorio y producción.
+- Cómo generar avisos de problema y recuperación.
+- Qué diferencias existen entre el laboratorio y producción.
 
-### Avance estimado de la exploración
+## Avance estimado
 
 | Frente | Estado | Avance estimado |
 |---|---|---:|
 | Zabbix Server con Docker | Operativo | 90% |
-| Instalación de Zabbix Agent 2 | Operativo | 90% |
+| Instalación de Zabbix Agent 2 | Operativo | 100% |
 | Comunicación pasiva con Oracle Linux | Validada | 100% |
-| Monitoreo básico de Oracle Database | En exploración | 55% |
-| Monitoreo básico del sistema operativo | En corrección | 45% |
-| Interpretación de métricas | Pendiente | 15% |
+| Comprobaciones activas de Linux | Validada | 100% |
+| Monitoreo básico de Oracle Database | En exploración | 60% |
+| Interpretación de métricas | En exploración | 20% |
 | Métricas personalizadas | No iniciado | 0% |
 | Alertas y notificaciones | No iniciado | 0% |
 | Monitoreo de aplicaciones | No iniciado | 0% |
 
-**Avance general estimado del demo: 35%.**
+**Avance general estimado del laboratorio: 40%.**
 
 ---
 
-## 2. Seguridad y tratamiento de información
+# 2. Conceptos básicos antes de iniciar
+
+## Zabbix Server
+
+Es el componente central. Recibe datos de los agentes, almacena históricos, evalúa condiciones y genera problemas.
+
+## Zabbix Agent 2
+
+Es el servicio instalado en el servidor que se desea monitorear. Obtiene datos del sistema operativo y de integraciones como Oracle.
+
+## Comprobación activa
+
+El agente inicia la comunicación y envía información al Zabbix Server.
+
+```text
+Servidor monitoreado ─────> Zabbix Server
+```
+
+La directiva principal es:
+
+```ini
+ServerActive=<IP_ZABBIX_SERVER>:<PUERTO_ZABBIX_SERVER>
+```
+
+## Comprobación pasiva
+
+El Zabbix Server inicia la consulta contra el agente.
+
+```text
+Zabbix Server ─────> Servidor monitoreado:10050
+```
+
+La directiva principal es:
+
+```ini
+Server=<IP_AUTORIZADA>
+```
+
+## Equipo o host
+
+Es el registro del servidor dentro de Zabbix.
+
+## Plantilla
+
+Es un conjunto de métricas, reglas de descubrimiento, gráficas y alertas reutilizables.
+
+## Elemento o métrica
+
+Es un valor individual, por ejemplo:
+
+```text
+CPU utilizada
+Memoria disponible
+Espacio libre
+Oracle Ping
+Sesiones Oracle
+```
+
+## Trigger
+
+Es una condición que determina cuándo una métrica representa un problema.
+
+## Macro
+
+Es un parámetro reutilizable. Se utiliza para direcciones, usuarios, contraseñas y umbrales.
+
+Ejemplo:
+
+```text
+{$ORACLE.SERVICE}
+{$ORACLE.USER}
+{$ORACLE.PGA.USE.MAX.WARN}
+```
+
+---
+
+# 3. Seguridad y manejo de información
 
 Este repositorio es público. Utilizar valores genéricos:
 
@@ -52,6 +131,7 @@ Este repositorio es público. Utilizar valores genéricos:
 - `<HOSTNAME_WINDOWS>`
 - `<HOSTNAME_LINUX>`
 - `<ORACLE_SERVICE>`
+- `<ORACLE_HOME>`
 - `<CONTRASENA_SEGURA>`
 
 No publicar:
@@ -64,7 +144,7 @@ No publicar:
 
 ---
 
-## 3. Arquitectura del laboratorio
+# 4. Arquitectura del laboratorio
 
 ```text
 Windows
@@ -88,7 +168,7 @@ Windows
 | Agent 2 de Windows | `11050` | Windows local |
 | Agent 2 de Oracle Linux | `10050` | Oracle Linux |
 
-### Flujo utilizado
+## Flujo utilizado
 
 ```text
 Comprobaciones activas Linux
@@ -102,7 +182,9 @@ Zabbix Server ───────────────> Agent 2:10050 ─�
 
 # Parte A. Preparar Windows y Docker Desktop
 
-## 4. Verificar WSL 2
+# 5. Verificar WSL 2
+
+Ejecutar en PowerShell:
 
 ```powershell
 wsl --version
@@ -119,20 +201,27 @@ Where-Object { $_.FeatureName -in @(
 Select-Object FeatureName, State
 ```
 
-Ambas características deben estar habilitadas.
+Ambas deben aparecer habilitadas.
 
-## 5. Instalar Docker Desktop
+# 6. Instalar Docker Desktop
 
 1. Descargar Docker Desktop para Windows.
 2. Ejecutar el instalador.
 3. Utilizar el backend WSL 2.
 4. Reiniciar Windows si se solicita.
-5. Abrir Docker Desktop y esperar a que el motor Linux esté iniciado.
+5. Abrir Docker Desktop.
+6. Esperar a que el motor Linux se encuentre iniciado.
 
 Validar:
 
 ```powershell
 docker run hello-world
+```
+
+Resultado esperado:
+
+```text
+Hello from Docker!
 ```
 
 Consulta de errores: [Docker Desktop y Windows](base-conocimiento/docker-windows.md).
@@ -141,7 +230,7 @@ Consulta de errores: [Docker Desktop y Windows](base-conocimiento/docker-windows
 
 # Parte B. Instalar Zabbix 7.4 con Docker Compose
 
-## 6. Clonar el repositorio oficial
+# 7. Clonar el repositorio oficial
 
 ```powershell
 mkdir C:\docker
@@ -157,7 +246,7 @@ Verificar Compose:
 docker compose version
 ```
 
-## 7. Configurar variables y puertos
+# 8. Configurar variables y puertos
 
 Editar `.env`:
 
@@ -181,7 +270,7 @@ docker compose config --images
 
 Deben aparecer imágenes `alpine-7.4-latest` para los componentes Zabbix.
 
-## 8. Iniciar Zabbix
+# 9. Iniciar Zabbix
 
 ```powershell
 cd C:\docker\zabbix-docker
@@ -207,16 +296,16 @@ Acceso:
 http://localhost:8080
 ```
 
-Credenciales predeterminadas del laboratorio:
+Credenciales iniciales del laboratorio:
 
 ```text
 Usuario: Admin
 Contraseña: zabbix
 ```
 
-No conservar estas credenciales en ambientes expuestos o productivos.
+No conservar esta contraseña en ambientes expuestos o productivos.
 
-## 9. Operación básica
+# 10. Operación básica de Docker
 
 Iniciar o actualizar:
 
@@ -249,7 +338,7 @@ Consulta de errores: [Zabbix en Docker Compose](base-conocimiento/zabbix-docker.
 
 # Parte C. Monitorear Windows
 
-## 10. Instalar Zabbix Agent 2
+# 11. Instalar Zabbix Agent 2
 
 Instalar el MSI oficial de Zabbix Agent 2.
 
@@ -279,7 +368,7 @@ Start-Service "Zabbix Agent 2"
 Get-Service "Zabbix Agent 2"
 ```
 
-## 11. Crear el host Windows
+# 12. Crear el host Windows
 
 Ruta:
 
@@ -318,9 +407,9 @@ Consulta de errores: [Agentes Zabbix](base-conocimiento/agentes-zabbix.md).
 
 ---
 
-# Parte D. Instalar Agent 2 en Oracle Linux 8.10
+# Parte D. Instalar y configurar Agent 2 en Oracle Linux
 
-## 12. Instalar el repositorio oficial
+# 13. Instalar el repositorio oficial
 
 Respaldar una configuración manual anterior, cuando exista:
 
@@ -343,7 +432,7 @@ Instalar Agent 2:
 dnf install -y zabbix-agent2
 ```
 
-Rutas:
+Rutas principales:
 
 ```text
 Ejecutable:    /usr/sbin/zabbix_agent2
@@ -352,7 +441,7 @@ Servicio:      zabbix-agent2
 Log:           /var/log/zabbix/zabbix_agent2.log
 ```
 
-## 13. Configurar Agent 2
+# 14. Configurar Agent 2
 
 Editar:
 
@@ -369,12 +458,31 @@ Hostname=<HOSTNAME_LINUX>
 ListenPort=10050
 ```
 
-Consideraciones:
+## Qué controla cada línea
 
-- `Hostname` debe coincidir exactamente con **Nombre del equipo** en Zabbix.
-- `Server=` controla qué orígenes pueden consultar pasivamente al agente.
-- `ServerActive=` indica a dónde enviará el agente sus comprobaciones activas.
-- La IP de origen real de una comprobación pasiva puede diferir de la IP publicada del servidor Zabbix.
+```ini
+Server=
+```
+
+Autoriza las direcciones que pueden consultar pasivamente al agente.
+
+```ini
+ServerActive=
+```
+
+Indica la dirección a la que el agente enviará las comprobaciones activas.
+
+```ini
+Hostname=
+```
+
+Debe coincidir exactamente con el campo **Nombre del equipo** en Zabbix.
+
+```ini
+ListenPort=
+```
+
+Puerto donde el agente recibe comprobaciones pasivas.
 
 Validar e iniciar:
 
@@ -384,7 +492,13 @@ systemctl enable --now zabbix-agent2
 systemctl status zabbix-agent2 --no-pager
 ```
 
-## 14. Crear el host Oracle Linux
+Resultado esperado:
+
+```text
+active (running)
+```
+
+# 15. Crear el host Oracle Linux
 
 ```text
 Nombre del equipo: <HOSTNAME_LINUX>
@@ -393,9 +507,13 @@ Plantilla: Linux by Zabbix agent active
 Estado: habilitado
 ```
 
-Para la plantilla activa no se requiere inicialmente una interfaz.
+La plantilla activa no requiere inicialmente una interfaz.
 
-Verificar conectividad hacia Zabbix Server:
+---
+
+# 16. Validar comprobaciones activas
+
+## Paso 1. Probar conectividad hacia Zabbix Server
 
 ```bash
 timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/11051' \
@@ -403,37 +521,85 @@ timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/11051' \
   || echo "SIN CONEXION"
 ```
 
-Revisar logs:
+Si aparece `SIN CONEXION`, no continuar con Zabbix hasta encontrar la dirección correcta.
+
+## Paso 2. Probar direcciones posibles
+
+Cuando existen varias interfaces en Windows o Docker, probar cada dirección:
 
 ```bash
-tail -n 50 /var/log/zabbix/zabbix_agent2.log
-journalctl -u zabbix-agent2 -n 50 --no-pager
+for IP in <IP_1> <IP_2>; do
+  echo "Probando $IP:11051"
+  timeout 5 bash -c "cat < /dev/null > /dev/tcp/$IP/11051" \
+    && echo "CONEXION OK" \
+    || echo "SIN CONEXION"
+done
 ```
 
-### Estado actual de las comprobaciones activas
+## Hallazgo del laboratorio
 
-La comunicación pasiva funciona, pero la interfaz muestra la comprobación activa como desconocida y permanece una alerta similar a:
+La dirección configurada inicialmente no era accesible desde Oracle Linux. Otra dirección del mismo equipo sí aceptaba conexiones al puerto `11051`.
+
+La corrección fue:
+
+```ini
+ServerActive=<IP_QUE_RESPONDE>:11051
+Hostname=<HOSTNAME_LINUX>
+```
+
+Después:
+
+```bash
+sudo systemctl restart zabbix-agent2
+sudo systemctl is-active zabbix-agent2
+```
+
+## Paso 3. Revisar errores recientes
+
+```bash
+sudo journalctl -u zabbix-agent2 \
+  --since "10 minutes ago" \
+  --no-pager |
+grep -Ei 'active check configuration|cannot connect|host .*not found|no active checks|failed to send|no route'
+```
+
+Sin salida significa que no se encontraron esos errores durante el periodo revisado.
+
+## Paso 4. Validar en Zabbix
+
+Ruta:
 
 ```text
-Linux: Zabbix agent is not available (or no data for 30m)
+Monitoreo → Últimos datos
 ```
 
-Pendiente de diagnóstico:
+Buscar:
 
-```bash
-sudo grep -Ei 'active check|cannot connect|host .*not found|no active checks|failed to send|connection refused' \
-  /var/log/zabbix/zabbix_agent2.log | tail -n 50
+```text
+Zabbix agent ping
 ```
 
-No considerar concluido el monitoreo del sistema operativo hasta que las métricas activas tengan valores recientes.
+Resultado esperado:
 
-Consulta de errores: [Agentes Zabbix](base-conocimiento/agentes-zabbix.md).
+```text
+Up (1)
+```
+
+La comprobación debe tener una antigüedad reciente, por ejemplo segundos o pocos minutos.
+
+## Resultado alcanzado
+
+```text
+Zabbix agent ping = Up (1)
+```
+
+Esto confirma que las comprobaciones activas de Linux funcionan.
 
 ---
 
-# Parte E. Preparar el monitoreo de Oracle Database
+# Parte E. Configurar comprobaciones pasivas para Oracle
 
-## 15. Vincular plantillas al host
+# 17. Vincular plantillas
 
 Las dos plantillas deben vincularse directamente al host:
 
@@ -442,11 +608,13 @@ Linux by Zabbix agent active
 Oracle by Zabbix agent 2
 ```
 
-No vincular la plantilla Oracle dentro de la plantilla Linux y no modificar directamente las plantillas oficiales.
+No vincular la plantilla Oracle dentro de la plantilla Linux.
 
-## 16. Agregar interfaz pasiva
+No modificar directamente las plantillas oficiales.
 
-En el host `<HOSTNAME_LINUX>`, agregar interfaz tipo **Agente**:
+# 18. Agregar interfaz pasiva
+
+En el host `<HOSTNAME_LINUX>`, agregar una interfaz tipo **Agente**:
 
 ```text
 IP: <IP_ORACLE_LINUX>
@@ -467,23 +635,31 @@ Resultado esperado:
 LISTEN ... *:10050 ... zabbix_agent2
 ```
 
-## 17. Identificar el origen real de las consultas pasivas
+# 19. Identificar el origen real de la consulta pasiva
 
-Desde el servidor donde se ejecuta Zabbix, validar:
+Desde el equipo donde se ejecuta Zabbix:
 
 ```powershell
 Test-NetConnection <IP_ORACLE_LINUX> -Port 10050 -InformationLevel Detailed
 ```
 
-En Oracle Linux, cuando exista duda sobre el origen:
+En Oracle Linux:
 
 ```bash
 sudo timeout 60 tcpdump -nni <INTERFAZ_RED> tcp port 10050 -c 3
 ```
 
-La dirección observada debe incluirse en `Server=` y en la regla de `firewalld`.
+La dirección observada debe incluirse en:
 
-## 18. Autorizar el firewall de forma permanente
+```ini
+Server=<IP_ORIGEN_REAL>
+```
+
+## Hallazgo del laboratorio
+
+La consulta pasiva llegaba desde una dirección distinta a la esperada. Por eso el agente rechazaba la conexión aunque el puerto estuviera abierto.
+
+# 20. Autorizar el firewall permanentemente
 
 Identificar la zona:
 
@@ -502,15 +678,19 @@ sudo firewall-cmd --reload
 sudo firewall-cmd --zone=public --list-rich-rules
 ```
 
-Validación alcanzada en el demo:
+Validaciones necesarias:
 
-- La regla permanece después de `firewall-cmd --reload`.
-- La interfaz pasiva aparece como **Disponible**.
-- `oracle.ping` continúa en `Up (1)` después de recargar el firewall.
+- La regla aparece después del `reload`.
+- La interfaz del agente aparece como **Disponible**.
+- `oracle.ping` continúa en `Up (1)`.
 
-No retirar otras reglas existentes sin confirmar antes si corresponden a un Zabbix Server, proxy u otro origen autorizado.
+No eliminar otras reglas hasta confirmar si corresponden a otro Zabbix Server, proxy u origen autorizado.
 
-## 19. Identificar el servicio Oracle
+---
+
+# Parte F. Configurar Oracle Database
+
+# 21. Identificar el servicio Oracle
 
 En SQL*Plus:
 
@@ -526,7 +706,7 @@ Resultado del laboratorio:
 - Usuario de monitoreo local.
 - La macro `{$ORACLE.SERVICE}` utiliza el `SERVICE_NAME`, no el SID.
 
-## 20. Crear el usuario de monitoreo
+# 22. Crear el usuario de monitoreo
 
 Ejemplo base:
 
@@ -535,9 +715,7 @@ CREATE USER ZABBIX_MON IDENTIFIED BY "<CONTRASENA_SEGURA>";
 GRANT CREATE SESSION TO ZABBIX_MON;
 ```
 
-Durante el demo se otorgaron permisos explícitos sobre vistas dinámicas y de diccionario necesarias para la plantilla. La lista debe auditarse antes de producción contra la versión exacta de la plantilla utilizada.
-
-Permisos usados en la exploración:
+Durante el laboratorio se otorgaron permisos explícitos sobre vistas requeridas por la plantilla.
 
 ```sql
 GRANT SELECT ON SYS.V_$INSTANCE TO ZABBIX_MON;
@@ -558,18 +736,22 @@ GRANT SELECT ON SYS.V_$ASM_DISKGROUP_STAT TO ZABBIX_MON;
 GRANT SELECT ON SYS.DBA_USERS TO ZABBIX_MON;
 ```
 
-### Restricción de licenciamiento
+Esta lista debe auditarse antes de producción contra la versión exacta de la plantilla utilizada.
 
-El ambiente no cuenta con Oracle Diagnostics Pack. Por esta razón se revocaron:
+## Restricción de licenciamiento
+
+El ambiente no cuenta con Oracle Diagnostics Pack. Se revocaron:
 
 ```sql
 REVOKE SELECT_CATALOG_ROLE FROM ZABBIX_MON;
 REVOKE SELECT ON SYS.V_$ACTIVE_SESSION_HISTORY FROM ZABBIX_MON;
 ```
 
-Antes de producción se debe clonar la plantilla Oracle y deshabilitar los elementos, dependencias, gráficas o triggers que consulten ASH u otras funcionalidades no licenciadas. No modificar directamente la plantilla oficial.
+Antes de producción se debe clonar la plantilla Oracle y deshabilitar los elementos que consulten ASH u otras funciones no licenciadas.
 
-## 21. Configurar macros del host
+No modificar directamente la plantilla oficial.
+
+# 23. Configurar macros Oracle
 
 Ruta:
 
@@ -577,7 +759,7 @@ Ruta:
 Recopilación de datos → Equipos → <HOSTNAME_LINUX> → Macros
 ```
 
-Configuración:
+Configurar:
 
 ```text
 {$ORACLE.CONNSTRING} = tcp://127.0.0.1:1521
@@ -586,17 +768,15 @@ Configuración:
 {$ORACLE.PASSWORD}   = <CONTRASENA_SEGURA>
 ```
 
-La contraseña debe configurarse como **Texto secreto**.
+La contraseña debe ser de tipo **Texto secreto**.
 
-## 22. Validar credenciales directamente
-
-Desde Oracle Linux:
+# 24. Validar credenciales directamente
 
 ```bash
 sqlplus -L ZABBIX_MON@//127.0.0.1:1521/<ORACLE_SERVICE>
 ```
 
-La conexión exitosa confirma:
+Una conexión exitosa confirma:
 
 - Listener disponible.
 - Servicio correcto.
@@ -604,7 +784,7 @@ La conexión exitosa confirma:
 - Contraseña válida.
 - Cuenta habilitada.
 
-## 23. Resolver `DPI-1047` en Agent 2
+# 25. Resolver `DPI-1047`
 
 Síntoma:
 
@@ -613,22 +793,22 @@ DPI-1047: Cannot locate a 64-bit Oracle Client library:
 "libclntsh.so: cannot open shared object file: No such file or directory"
 ```
 
-La biblioteca Oracle existía en el `ORACLE_HOME`, pero el servicio `zabbix-agent2` iniciado por `systemd` no heredaba el entorno del usuario `oracle`.
+La biblioteca existía en `ORACLE_HOME`, pero el servicio `zabbix-agent2` no recibía las variables de entorno Oracle.
 
-Verificar la biblioteca:
+Verificar:
 
 ```bash
 find <ORACLE_HOME> -name 'libclntsh.so*' -type f -o -type l
 ls -l <ORACLE_HOME>/lib/libclntsh.so*
 ```
 
-Crear el directorio del override:
+Crear:
 
 ```bash
 sudo mkdir -p /etc/systemd/system/zabbix-agent2.service.d
 ```
 
-Crear:
+Archivo:
 
 ```text
 /etc/systemd/system/zabbix-agent2.service.d/oracle.conf
@@ -649,7 +829,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart zabbix-agent2
 ```
 
-Validar el entorno efectivo:
+Validar:
 
 ```bash
 sudo systemctl show zabbix-agent2 -p Environment --value | tr ' ' '\n'
@@ -662,9 +842,9 @@ ORACLE_HOME=<ORACLE_HOME>
 LD_LIBRARY_PATH=<ORACLE_HOME>/lib
 ```
 
-Este cambio afecta únicamente al servicio Agent 2 y no modifica globalmente el entorno del sistema.
+Este cambio aplica solo al servicio Agent 2.
 
-## 24. Validar `oracle.ping`
+# 26. Validar Oracle Ping
 
 Ruta:
 
@@ -678,28 +858,160 @@ Buscar:
 Oracle by Zabbix agent 2: Ping
 ```
 
-Resultado alcanzado:
+Resultado esperado:
 
 ```text
 Up (1)
 ```
 
-Esto confirma funcionalmente:
+Esto confirma:
 
-1. Comunicación pasiva entre Zabbix Server y Agent 2.
-2. Carga de las bibliotecas Oracle Client.
+1. Comunicación pasiva.
+2. Carga de bibliotecas Oracle Client.
 3. Conectividad con el listener.
 4. Servicio Oracle válido.
-5. Autenticación de `ZABBIX_MON`.
-6. Expansión correcta de las macros.
-
-Consulta específica: [Monitoreo de Oracle](base-conocimiento/oracle.md).
+5. Autenticación del usuario.
+6. Macros correctas.
 
 ---
 
-# Parte F. Hallazgos de la exploración
+# Parte G. Cómo leer Zabbix
 
-## 25. Alerta de REDO logs disponibles
+# 27. Diferencia entre `Ping` y `Zabbix agent ping`
+
+```text
+Ping
+```
+
+Corresponde a la integración Oracle.
+
+```text
+Zabbix agent ping
+```
+
+Corresponde a la disponibilidad del agente Linux mediante comprobaciones activas.
+
+Ambas deben aparecer como:
+
+```text
+Up (1)
+```
+
+# 28. Cómo interpretar una gráfica
+
+El eje horizontal muestra tiempo.
+
+Ejemplo:
+
+```text
+23:35  23:40  23:45  00:00  00:05
+```
+
+Cada marca representa un momento del periodo mostrado.
+
+Las etiquetas inferiores significan:
+
+```text
+último  mínimo  media  máximo
+```
+
+- `último`: valor más reciente.
+- `mínimo`: menor valor del periodo.
+- `media`: promedio del periodo.
+- `máximo`: mayor valor del periodo.
+
+# 29. Corregir la zona horaria
+
+Cuando las horas aparecen adelantadas o atrasadas, revisar la zona horaria del perfil.
+
+Ruta:
+
+```text
+Configuración de usuario → Perfil → Zona horaria
+```
+
+Para Ciudad de México:
+
+```text
+America/Mexico_City
+```
+
+La zona horaria del usuario tiene prioridad sobre la global.
+
+Después de guardar, recargar la gráfica.
+
+---
+
+# Parte H. Primeras métricas interpretadas
+
+# 30. Oracle PGA
+
+PGA significa **Program Global Area**.
+
+Es memoria privada utilizada por procesos Oracle para:
+
+- Ordenamientos.
+- `GROUP BY`.
+- `HASH JOIN`.
+- Cursores.
+- Sesiones.
+- Operaciones PL/SQL.
+
+Métricas comunes:
+
+| Métrica | Significado |
+|---|---|
+| Total in use | Memoria utilizada actualmente |
+| Total allocated | Memoria total asignada |
+| Total freeable | Memoria que podría liberarse |
+| Aggregate target | Objetivo configurado de PGA |
+| Global memory bound | Límite aproximado de un área de trabajo |
+
+Interpretación inicial:
+
+```text
+PGA utilizada / PGA_AGGREGATE_TARGET × 100
+```
+
+No ajustar Oracle ni el trigger usando una sola lectura. Revisar tendencia, duración y memoria del sistema operativo.
+
+# 31. Tiempo promedio de espera del disco
+
+Ejemplo:
+
+```text
+sda: Disk average waiting time
+```
+
+Mide cuánto tarda una operación de entrada/salida desde que Linux la solicita hasta que termina.
+
+Métricas comunes:
+
+| Métrica | Significado |
+|---|---|
+| `r_await` | Espera promedio de lecturas |
+| `w_await` | Espera promedio de escrituras |
+
+Unidad:
+
+```text
+milisegundos
+```
+
+No mide espacio libre. Mide latencia del almacenamiento.
+
+Analizar junto con:
+
+```text
+Disk utilization
+Disk average queue size
+Disk read rate
+Disk write rate
+```
+
+Un pico aislado no siempre representa un problema. Un valor alto sostenido requiere revisar carga, colas, respaldos, consultas y almacenamiento.
+
+# 32. REDO logs disponibles
 
 Zabbix reportó:
 
@@ -707,7 +1019,7 @@ Zabbix reportó:
 Redo logs available to switch = 0
 ```
 
-Consulta realizada:
+Consulta utilizada:
 
 ```sql
 SELECT GROUP#,
@@ -729,7 +1041,7 @@ Resultado observado:
 0 grupos INACTIVE o UNUSED
 ```
 
-La base utiliza tres grupos de 200 MB y está en modo:
+La base tiene tres grupos de 200 MB y utiliza:
 
 ```text
 NOARCHIVELOG
@@ -737,73 +1049,115 @@ NOARCHIVELOG
 
 Conclusión provisional:
 
-- El umbral predeterminado de menos de tres grupos disponibles no es compatible con una configuración total de tres grupos, porque uno siempre estará `CURRENT`.
-- El valor cero también requiere analizar la frecuencia de log switches y el comportamiento de checkpoints.
-- No se debe agregar, eliminar o redimensionar REDO ni modificar el umbral sin completar primero el análisis.
+- El umbral predeterminado debe revisarse.
+- No debe modificarse Oracle únicamente para cerrar la alerta.
+- Deben revisarse frecuencia de log switches y checkpoints.
 
-Esta revisión quedó temporalmente aplazada.
+Esta revisión continúa pendiente.
 
-## 26. Interpretación de métricas
+---
 
-La exploración confirmó que Zabbix recopila valores y genera alertas, pero todavía falta documentar:
+# Parte I. Cómo parametrizar métricas
 
-- Qué significa cada métrica.
-- Cuál es su rango normal.
-- Qué condiciones requieren advertencia o incidente.
-- Qué valores predeterminados no aplican al ambiente.
-- Qué métricas son operativas y cuáles son únicamente informativas.
+# 33. Ajustar umbrales mediante macros
 
-Cada métrica aceptada debe documentarse con:
+Las plantillas utilizan macros para evitar modificar cada trigger.
+
+Procedimiento general:
+
+1. Abrir **Recopilación de datos → Equipos**.
+2. Seleccionar el host.
+3. Abrir **Macros**.
+4. Localizar la macro heredada.
+5. Crear una sobrescritura a nivel host.
+6. Documentar el motivo del cambio.
+7. Esperar una nueva recopilación.
+8. Validar que el trigger se comporte correctamente.
+
+No cambiar un umbral sin conocer:
+
+- Unidad.
+- Frecuencia de lectura.
+- Periodo evaluado por el trigger.
+- Comportamiento normal del servidor.
+- Consecuencia operativa.
+
+## Ficha mínima para cada métrica
 
 ```text
-Nombre
-Origen
-Unidad
-Frecuencia
-Valor normal
-Umbral de advertencia
-Umbral crítico
-Acción operativa
-Responsable
+Nombre:
+Origen:
+Unidad:
+Frecuencia:
+Valor normal:
+Umbral de advertencia:
+Umbral crítico:
+Duración requerida:
+Acción operativa:
+Responsable:
 ```
 
-## 27. Métricas personalizadas
+# 34. Métricas personalizadas
 
-Pendiente explorar:
+Pendiente de validar en el laboratorio:
 
-- `UserParameter` en Agent 2.
+- `UserParameter`.
 - Scripts externos.
 - Consultas SQL controladas.
-- Elementos calculados y dependientes.
+- Elementos calculados.
+- Elementos dependientes.
 - Descubrimiento de bajo nivel.
 - Procesos y servicios propios.
 - Métricas específicas de aplicaciones.
 
-No considerar concluido el demo hasta crear al menos una métrica personalizada representativa.
+El laboratorio no se considerará concluido hasta crear al menos una métrica personalizada y documentar:
 
-## 28. Avisos y escalamiento
+```text
+qué mide
+cómo se obtiene
+qué valor es normal
+qué condición genera alerta
+cómo se valida
+```
 
-Pendiente configurar y validar:
+---
 
-- Medios de notificación.
-- Destinatarios y grupos.
-- Severidades notificables.
+# Parte J. Alertas y avisos
+
+# 35. Notificaciones pendientes
+
+La siguiente etapa debe configurar y comprobar:
+
+- Medio de notificación.
+- Destinatarios.
+- Grupos de usuarios.
+- Severidades.
 - Ventanas horarias.
 - Reintentos.
 - Escalamiento.
-- Mensajes de recuperación.
+- Mensaje de problema.
+- Mensaje de recuperación.
 - Evidencia de entrega.
 
-El demo debe incluir al menos una alerta controlada y su notificación de problema y recuperación.
+Prueba mínima requerida:
 
-## 29. Monitoreo de aplicaciones
+1. Generar un problema controlado.
+2. Recibir el aviso.
+3. Resolver el problema.
+4. Recibir el aviso de recuperación.
 
-Pendiente seleccionar una aplicación representativa y validar:
+---
+
+# Parte K. Monitoreo de aplicaciones
+
+# 36. Alcance pendiente
+
+Seleccionar una aplicación representativa y validar:
 
 - Disponibilidad HTTP/HTTPS.
 - Código de respuesta.
 - Tiempo de respuesta.
-- Puerto de servicio.
+- Puerto del servicio.
 - Proceso Java.
 - Servicio Tomcat.
 - Endpoint o API crítica.
@@ -811,7 +1165,22 @@ Pendiente seleccionar una aplicación representativa y validar:
 
 ---
 
-# Estado actual
+# 37. Matriz rápida de diagnóstico
+
+| Síntoma | Causa probable | Validación |
+|---|---|---|
+| Agent 2 no inicia | Puerto ocupado o configuración inválida | `zabbix_agent2 -T` y `systemctl status` |
+| `Zabbix agent ping` sin datos | `ServerActive` incorrecto o sin ruta | Probar puerto `11051` desde el servidor monitoreado |
+| Interfaz pasiva en timeout | Firewall o ruta | `Test-NetConnection`, `tcpdump`, `ss` |
+| Interfaz pasiva rechazada | IP no incluida en `Server=` | Revisar origen real y configuración del agente |
+| `Oracle Ping = Down (0)` | Credenciales, servicio o biblioteca Oracle | Probar SQL*Plus y revisar log de Agent 2 |
+| `DPI-1047` | Agent 2 no encuentra `libclntsh.so` | Configurar `ORACLE_HOME` y `LD_LIBRARY_PATH` en systemd |
+| Gráfica con horario incorrecto | Zona horaria del perfil | Cambiar a `America/Mexico_City` |
+| Alerta no coherente | Umbral genérico de plantilla | Revisar macro, unidad, periodo y arquitectura real |
+
+---
+
+# 38. Estado actual
 
 | Componente | Estado |
 |---|---|
@@ -822,28 +1191,31 @@ Pendiente seleccionar una aplicación representativa y validar:
 | Monitoreo de Windows | Funcional en laboratorio |
 | Zabbix Agent 2 en Oracle Linux | Instalado y activo |
 | Interfaz pasiva `10050` | Disponible y persistida en firewall |
-| Comprobaciones activas Linux | Pendientes de corregir |
+| Comprobaciones activas Linux | `Zabbix agent ping = Up (1)` |
 | Plantilla Oracle | Vinculada directamente al host |
 | Usuario Oracle `ZABBIX_MON` | Creado; permisos pendientes de auditoría final |
 | Macros Oracle | Configuradas y validadas |
 | Oracle Client en Agent 2 | Configurado mediante override de `systemd` |
 | `oracle.ping` | `Up (1)` |
 | Métricas Oracle | En recopilación y revisión |
-| Interpretación de métricas | Pendiente |
+| Interpretación de métricas | Iniciada |
 | Métricas personalizadas | No iniciado |
 | Notificaciones | No iniciado |
 | Aplicaciones | No iniciado |
 
 ---
 
-# Siguiente fase
+# 39. Siguiente fase
 
-- [ ] Corregir las comprobaciones activas de Linux.
+- [x] Confirmar comprobaciones activas de Linux.
+- [x] Confirmar `Zabbix agent ping = Up (1)`.
+- [x] Confirmar `oracle.ping = Up (1)`.
+- [x] Corregir la zona horaria del perfil.
 - [ ] Confirmar métricas recientes de CPU, memoria, discos y red.
-- [ ] Auditar los permisos exactos de `ZABBIX_MON` contra la plantilla utilizada.
-- [ ] Clonar la plantilla Oracle y excluir consultas no permitidas por licenciamiento.
+- [ ] Auditar los permisos exactos de `ZABBIX_MON`.
+- [ ] Clonar la plantilla Oracle para excluir consultas no permitidas.
 - [ ] Revisar elementos Oracle no soportados.
-- [ ] Definir una matriz de interpretación de métricas.
+- [ ] Crear una matriz de interpretación de métricas.
 - [ ] Crear una métrica personalizada de prueba.
 - [ ] Configurar una notificación de problema y recuperación.
 - [ ] Seleccionar y monitorear una aplicación representativa.
@@ -853,9 +1225,7 @@ Pendiente seleccionar una aplicación representativa y validar:
 
 ---
 
-# Criterios para cerrar el demo
-
-El demo se considerará técnicamente concluido cuando se confirme:
+# 40. Criterios para cerrar el laboratorio
 
 ## Sistema operativo
 
@@ -876,7 +1246,7 @@ El demo se considerará técnicamente concluido cuando se confirme:
 
 - Disponibilidad de una aplicación de prueba.
 - Tiempo de respuesta.
-- Validación de puerto, proceso o servicio.
+- Puerto, proceso o servicio validado.
 - Alerta funcional por indisponibilidad.
 
 ## Operación
@@ -888,20 +1258,22 @@ El demo se considerará técnicamente concluido cuando se confirme:
 
 ---
 
-# Diferencias esperadas entre laboratorio y producción
+# 41. Diferencias entre laboratorio y producción
 
-El laboratorio utiliza Windows, Docker Desktop, puertos alternos y un servidor de prueba. Una implementación productiva deberá evaluar:
+El laboratorio utiliza Windows, Docker Desktop, puertos alternos y un servidor de prueba.
+
+Una implementación productiva deberá evaluar:
 
 - Servidor Linux dedicado para Zabbix.
-- Base de datos soportada y dimensionada.
+- Base de datos dimensionada.
 - Respaldo y recuperación.
 - Alta disponibilidad.
 - Zabbix Proxy por ubicación o segmento.
 - TLS entre agentes, proxies y servidor.
 - Gestión segura de secretos.
-- Segmentación y reglas de firewall definitivas.
+- Reglas de firewall definitivas.
 - Retención de históricos y tendencias.
-- Capacidad para crecimiento.
+- Capacidad de crecimiento.
 - Integración con correo, mensajería o mesa de servicio.
 
 ---
