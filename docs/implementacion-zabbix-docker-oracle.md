@@ -7,6 +7,23 @@ Esta guía concentra el procedimiento completo aprendido durante el laboratorio.
 
 Las incidencias detalladas se documentan en la [base de conocimiento](base-conocimiento/README.md).
 
+## Forma de documentar los cambios
+
+Cuando un procedimiento requiera modificar un archivo, la guía debe indicar siempre:
+
+1. En qué equipo se realiza el cambio.
+2. Qué terminal o aplicación debe abrirse.
+3. La ruta completa del archivo.
+4. Cómo comprobar que el archivo existe.
+5. Cómo crear un respaldo antes de modificarlo.
+6. El comando exacto para abrirlo.
+7. Qué líneas deben buscarse o agregarse.
+8. Cómo guardar y cerrar el editor.
+9. Cómo comprobar que el cambio quedó aplicado.
+10. Qué resultado debe observarse antes de continuar.
+
+No se debe asumir que la persona conoce la ubicación de un archivo, el uso del editor o la forma de validar un cambio.
+
 ---
 
 # 1. Objetivo del laboratorio
@@ -232,12 +249,26 @@ Consulta de errores: [Docker Desktop y Windows](base-conocimiento/docker-windows
 
 # 7. Clonar el repositorio oficial
 
+Abrir **PowerShell** en Windows y ejecutar:
+
 ```powershell
 mkdir C:\docker
 cd C:\docker
 git clone https://github.com/zabbix/zabbix-docker.git
 cd zabbix-docker
 git checkout 7.4
+```
+
+Comprobar la carpeta actual:
+
+```powershell
+Get-Location
+```
+
+Resultado esperado:
+
+```text
+C:\docker\zabbix-docker
 ```
 
 Verificar Compose:
@@ -248,7 +279,105 @@ docker compose version
 
 # 8. Configurar variables y puertos
 
-Editar `.env`:
+Este cambio se realiza en el equipo **Windows** donde se clonó el repositorio de Zabbix Docker.
+
+## 8.1. Ubicación del archivo
+
+La ruta completa del archivo es:
+
+```text
+C:\docker\zabbix-docker\.env
+```
+
+El punto inicial forma parte del nombre. El archivo se llama exactamente:
+
+```text
+.env
+```
+
+No debe llamarse `.env.txt`.
+
+## 8.2. Abrir PowerShell y entrar a la carpeta
+
+Abrir **PowerShell** y ejecutar:
+
+```powershell
+cd C:\docker\zabbix-docker
+Get-Location
+```
+
+Resultado esperado:
+
+```text
+C:\docker\zabbix-docker
+```
+
+## 8.3. Comprobar que el archivo existe
+
+Ejecutar:
+
+```powershell
+Test-Path .\.env
+```
+
+Resultado esperado:
+
+```text
+True
+```
+
+También puede mostrarse la información del archivo con:
+
+```powershell
+Get-Item -Force .\.env
+```
+
+Si `Test-Path` devuelve `False`, detener el procedimiento y comprobar que el repositorio se clonó en `C:\docker\zabbix-docker`. No crear un archivo vacío sin revisar primero la instalación.
+
+## 8.4. Crear un respaldo
+
+Antes de modificar el archivo, ejecutar:
+
+```powershell
+Copy-Item .\.env .\.env.backup
+```
+
+Comprobar que existen ambos archivos:
+
+```powershell
+Get-ChildItem -Force .env*
+```
+
+Deben aparecer, por lo menos:
+
+```text
+.env
+.env.backup
+```
+
+## 8.5. Abrir el archivo con Bloc de notas
+
+Ejecutar desde la misma ventana de PowerShell:
+
+```powershell
+notepad .\.env
+```
+
+Se abrirá el archivo existente en Bloc de notas.
+
+## 8.6. Buscar y modificar las variables
+
+Dentro de Bloc de notas:
+
+1. Presionar `Ctrl + F`.
+2. Buscar `ZABBIX_WEB_NGINX_HTTP_PORT`.
+3. Modificar su valor a `8080`.
+4. Buscar `ZABBIX_WEB_NGINX_HTTPS_PORT`.
+5. Modificar su valor a `8443`.
+6. Buscar `ZABBIX_SERVER_PORT`.
+7. Modificar su valor a `11051`.
+
+Las líneas deben quedar así:
 
 ```dotenv
 ZABBIX_WEB_NGINX_HTTP_PORT=8080
@@ -256,13 +385,77 @@ ZABBIX_WEB_NGINX_HTTPS_PORT=8443
 ZABBIX_SERVER_PORT=11051
 ```
 
-En cada nueva sesión de PowerShell:
+Si una variable ya existe, modificar esa línea. No agregar otra línea duplicada con el mismo nombre.
+
+Si una variable no existe, agregarla una sola vez al final del archivo.
+
+## 8.7. Qué significa cada puerto
+
+| Variable | Función |
+|---|---|
+| `ZABBIX_WEB_NGINX_HTTP_PORT=8080` | Puerto HTTP usado para abrir la interfaz web desde Windows |
+| `ZABBIX_WEB_NGINX_HTTPS_PORT=8443` | Puerto HTTPS reservado para la interfaz web |
+| `ZABBIX_SERVER_PORT=11051` | Puerto publicado en Windows para que los agentes activos se conecten al Zabbix Server |
+
+En este laboratorio se utiliza `11051` porque el puerto habitual `10051` no estaba disponible en Windows. Dentro del contenedor, Zabbix Server continúa escuchando en `10051`.
+
+## 8.8. Guardar y cerrar
+
+En Bloc de notas:
+
+1. Presionar `Ctrl + S`.
+2. Cerrar Bloc de notas.
+
+Como se abrió un archivo existente, Bloc de notas debe guardar el cambio sobre `.env` y no crear `.env.txt`.
+
+## 8.9. Comprobar lo guardado
+
+Regresar a PowerShell y ejecutar:
+
+```powershell
+Get-Content .\.env |
+Select-String 'ZABBIX_WEB_NGINX_HTTP_PORT|ZABBIX_WEB_NGINX_HTTPS_PORT|ZABBIX_SERVER_PORT'
+```
+
+Resultado esperado:
+
+```text
+ZABBIX_WEB_NGINX_HTTP_PORT=8080
+ZABBIX_WEB_NGINX_HTTPS_PORT=8443
+ZABBIX_SERVER_PORT=11051
+```
+
+Comprobar también que no se creó accidentalmente `.env.txt`:
+
+```powershell
+Get-ChildItem -Force .env*
+```
+
+## 8.10. Definir la variante de imágenes
+
+En la misma ventana de PowerShell ejecutar:
 
 ```powershell
 $env:OS="alpine"
 ```
 
-Verificar las imágenes:
+Comprobar el valor:
+
+```powershell
+$env:OS
+```
+
+Resultado esperado:
+
+```text
+alpine
+```
+
+Esta variable solo se conserva en la ventana actual de PowerShell. Debe ejecutarse nuevamente cuando se abra una nueva sesión antes de utilizar `docker compose`.
+
+## 8.11. Validar la configuración antes de iniciar
+
+Ejecutar:
 
 ```powershell
 docker compose config --images
@@ -270,11 +463,32 @@ docker compose config --images
 
 Deben aparecer imágenes `alpine-7.4-latest` para los componentes Zabbix.
 
+Después ejecutar:
+
+```powershell
+docker compose config |
+Select-String '8080|8443|11051'
+```
+
+La salida debe mostrar los puertos configurados. Si aparece un error, no iniciar los contenedores hasta corregir el archivo `.env`.
+
 # 9. Iniciar Zabbix
+
+Abrir PowerShell y entrar a la carpeta:
 
 ```powershell
 cd C:\docker\zabbix-docker
+```
+
+Definir la variante de imágenes:
+
+```powershell
 $env:OS="alpine"
+```
+
+Iniciar los contenedores:
+
+```powershell
 docker compose up -d
 ```
 
@@ -307,10 +521,16 @@ No conservar esta contraseña en ambientes expuestos o productivos.
 
 # 10. Operación básica de Docker
 
+Antes de ejecutar los comandos, abrir PowerShell y entrar a:
+
+```powershell
+cd C:\docker\zabbix-docker
+$env:OS="alpine"
+```
+
 Iniciar o actualizar:
 
 ```powershell
-$env:OS="alpine"
 docker compose up -d
 ```
 
@@ -338,11 +558,54 @@ Consulta de errores: [Zabbix en Docker Compose](base-conocimiento/zabbix-docker.
 
 # Parte C. Monitorear Windows
 
-# 11. Instalar Zabbix Agent 2
+# 11. Instalar y configurar Zabbix Agent 2
 
 Instalar el MSI oficial de Zabbix Agent 2.
 
-Configuración de laboratorio:
+## 11.1. Ubicación del archivo de configuración
+
+La ruta predeterminada es:
+
+```text
+C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf
+```
+
+## 11.2. Abrir PowerShell como administrador
+
+1. Abrir el menú Inicio.
+2. Escribir `PowerShell`.
+3. Hacer clic derecho en **Windows PowerShell**.
+4. Elegir **Ejecutar como administrador**.
+
+## 11.3. Comprobar que el archivo existe
+
+```powershell
+Test-Path 'C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf'
+```
+
+Resultado esperado:
+
+```text
+True
+```
+
+## 11.4. Crear respaldo
+
+```powershell
+Copy-Item `
+  'C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf' `
+  'C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf.backup'
+```
+
+## 11.5. Abrir el archivo como administrador
+
+```powershell
+Start-Process notepad.exe `
+  -Verb RunAs `
+  -ArgumentList '"C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf"'
+```
+
+Buscar y dejar activas estas líneas:
 
 ```ini
 Hostname=<HOSTNAME_WINDOWS>
@@ -351,9 +614,21 @@ ServerActive=127.0.0.1:11051
 ListenPort=11050
 ```
 
-La línea `ListenPort` debe estar activa, sin `#`.
+La línea `ListenPort` debe estar activa, sin `#` al inicio.
 
-Validar:
+No mantener dos líneas activas con el mismo parámetro.
+
+Guardar con `Ctrl + S` y cerrar Bloc de notas.
+
+## 11.6. Comprobar la configuración guardada
+
+```powershell
+Select-String `
+  -Path 'C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf' `
+  -Pattern '^(Hostname|Server|ServerActive|ListenPort)='
+```
+
+Validar la sintaxis:
 
 ```powershell
 & "C:\Program Files\Zabbix Agent 2\zabbix_agent2.exe" `
@@ -443,11 +718,49 @@ Log:           /var/log/zabbix/zabbix_agent2.log
 
 # 14. Configurar Agent 2
 
-Editar:
+Este cambio se realiza en **Oracle Linux**.
+
+## 14.1. Ruta del archivo
+
+```text
+/etc/zabbix/zabbix_agent2.conf
+```
+
+## 14.2. Comprobar que existe
 
 ```bash
-vi /etc/zabbix/zabbix_agent2.conf
+sudo ls -l /etc/zabbix/zabbix_agent2.conf
 ```
+
+## 14.3. Crear un respaldo con fecha y hora
+
+```bash
+sudo cp -a \
+  /etc/zabbix/zabbix_agent2.conf \
+  /etc/zabbix/zabbix_agent2.conf.backup.$(date +%Y%m%d-%H%M%S)
+```
+
+Comprobar los respaldos:
+
+```bash
+sudo ls -l /etc/zabbix/zabbix_agent2.conf*
+```
+
+## 14.4. Abrir el archivo con `vi`
+
+```bash
+sudo vi /etc/zabbix/zabbix_agent2.conf
+```
+
+Uso básico de `vi`:
+
+1. Presionar `/` y escribir el nombre del parámetro que se desea buscar, por ejemplo `/ServerActive`.
+2. Presionar `Enter`.
+3. Presionar `i` para entrar al modo de edición.
+4. Modificar el texto.
+5. Presionar `Esc` para salir del modo de edición.
+6. Escribir `:wq` y presionar `Enter` para guardar y salir.
+7. Para salir sin guardar, presionar `Esc`, escribir `:q!` y presionar `Enter`.
 
 Configuración base:
 
@@ -484,12 +797,26 @@ ListenPort=
 
 Puerto donde el agente recibe comprobaciones pasivas.
 
-Validar e iniciar:
+## 14.5. Comprobar lo guardado
 
 ```bash
-/usr/sbin/zabbix_agent2 -c /etc/zabbix/zabbix_agent2.conf -T
-systemctl enable --now zabbix-agent2
-systemctl status zabbix-agent2 --no-pager
+sudo grep -E '^(Server|ServerActive|Hostname|ListenPort)=' \
+  /etc/zabbix/zabbix_agent2.conf
+```
+
+Validar la sintaxis:
+
+```bash
+/usr/sbin/zabbix_agent2 \
+  -c /etc/zabbix/zabbix_agent2.conf \
+  -T
+```
+
+Iniciar y habilitar el servicio:
+
+```bash
+sudo systemctl enable --now zabbix-agent2
+sudo systemctl status zabbix-agent2 --no-pager
 ```
 
 Resultado esperado:
@@ -802,19 +1129,27 @@ find <ORACLE_HOME> -name 'libclntsh.so*' -type f -o -type l
 ls -l <ORACLE_HOME>/lib/libclntsh.so*
 ```
 
-Crear:
+## 25.1. Crear la carpeta del archivo de configuración
 
 ```bash
 sudo mkdir -p /etc/systemd/system/zabbix-agent2.service.d
 ```
 
-Archivo:
+## 25.2. Ruta exacta del archivo
 
 ```text
 /etc/systemd/system/zabbix-agent2.service.d/oracle.conf
 ```
 
-Contenido:
+## 25.3. Abrir el archivo
+
+```bash
+sudo vi /etc/systemd/system/zabbix-agent2.service.d/oracle.conf
+```
+
+El archivo puede no existir todavía. `vi` lo creará al guardar.
+
+Presionar `i` y escribir:
 
 ```ini
 [Service]
@@ -822,7 +1157,19 @@ Environment="ORACLE_HOME=<ORACLE_HOME>"
 Environment="LD_LIBRARY_PATH=<ORACLE_HOME>/lib"
 ```
 
-Aplicar:
+Después:
+
+1. Presionar `Esc`.
+2. Escribir `:wq`.
+3. Presionar `Enter`.
+
+## 25.4. Comprobar el contenido
+
+```bash
+sudo cat /etc/systemd/system/zabbix-agent2.service.d/oracle.conf
+```
+
+## 25.5. Aplicar el cambio
 
 ```bash
 sudo systemctl daemon-reload
