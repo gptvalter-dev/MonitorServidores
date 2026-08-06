@@ -17,8 +17,8 @@ Oracle by Zabbix agent 2
 - El usuario `ZABBIX_MON` ya fue creado.
 - `SELECT_CATALOG_ROLE` y el permiso directo sobre `V_$ACTIVE_SESSION_HISTORY` fueron revocados.
 - No se cuenta con Oracle Diagnostics Pack.
-- La conectividad TCP al agente pasivo fue validada desde `192.20.0.12`.
 - Agent 2 autoriza consultas pasivas desde `192.20.0.10` y `192.20.0.12`.
+- La regla de `firewalld` para `192.20.0.12/32` ya es permanente.
 - Las macros Oracle están configuradas en el host.
 - La conexión directa por SQL*Plus con `ZABBIX_MON@//127.0.0.1:1521/SIAL` fue exitosa.
 - La incidencia `DPI-1047` fue resuelta configurando el entorno Oracle del servicio `zabbix-agent2`.
@@ -39,7 +39,7 @@ La plantilla Oracle se vinculó dentro de `Linux by Zabbix agent active` en vez 
 
 **Solución**
 
-No modificar las plantillas oficiales. Vincular ambas directamente al host Oracle Linux:
+Vincular directamente al host:
 
 ```text
 Linux by Zabbix agent active
@@ -52,13 +52,7 @@ Oracle by Zabbix agent 2
 
 ## 2. La plantilla Oracle requiere interfaz pasiva
 
-**Síntoma**
-
-El host funcionaba con comprobaciones activas, pero Zabbix requería una interfaz pasiva para la plantilla Oracle.
-
-**Solución aplicada**
-
-Interfaz tipo **Agente**:
+**Configuración aplicada**
 
 ```text
 IP: 192.0.0.73
@@ -73,30 +67,36 @@ ServerActive=192.20.0.10:11051
 Hostname=ZAM-SV-073-19C
 ```
 
-Después de reiniciar `zabbix-agent2`, la interfaz cambió a:
+La regla permanente quedó configurada así:
+
+```bash
+sudo firewall-cmd --permanent --zone=public \
+  --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
+
+sudo firewall-cmd --reload
+```
+
+Validación:
 
 ```text
+192.0.0.73:10050
 Estado: Disponible
 Error: ninguno
 ```
 
-**Estado:** resuelta. La regla de `firewalld` para `192.20.0.12/32` sigue pendiente de hacerse permanente.
+**Estado:** resuelta y persistida.
 
 ---
 
-## 3. Se intentó utilizar SID en lugar de `SERVICE_NAME`
+## 3. Uso de `SERVICE_NAME`
 
-**Situación**
-
-La operación habitual identifica la base por SID, pero la plantilla solicita `{$ORACLE.SERVICE}`.
-
-**Solución**
-
-Configurar `{$ORACLE.SERVICE}` con el `SERVICE_NAME` publicado por el listener. Para este servidor:
+La macro se configuró con:
 
 ```text
-SIAL
+{$ORACLE.SERVICE} = SIAL
 ```
+
+No se utilizó SID.
 
 **Estado:** resuelta.
 
@@ -104,33 +104,18 @@ SIAL
 
 ## 4. Permisos incompatibles con la licencia disponible
 
-**Situación**
-
-Inicialmente se otorgaron al usuario `ZABBIX_MON`:
-
-```sql
-GRANT SELECT_CATALOG_ROLE TO ZABBIX_MON;
-GRANT SELECT ON SYS.V_$ACTIVE_SESSION_HISTORY TO ZABBIX_MON;
-```
-
-La organización no cuenta con Oracle Diagnostics Pack.
-
-**Acción aplicada**
+Se revocaron:
 
 ```sql
 REVOKE SELECT_CATALOG_ROLE FROM ZABBIX_MON;
 REVOKE SELECT ON SYS.V_$ACTIVE_SESSION_HISTORY FROM ZABBIX_MON;
 ```
 
-Los permisos explícitos necesarios sobre las demás vistas de monitoreo se conservan.
-
 **Estado:** resuelta. La plantilla debe clonarse posteriormente para excluir consultas relacionadas con ASH.
 
 ---
 
-## 5. Macros Oracle configuradas en el host
-
-En **Recopilación de datos → Equipos → ZAM-SV-073-19C → Macros** se confirmaron:
+## 5. Macros Oracle
 
 ```text
 {$ORACLE.CONNSTRING} = tcp://127.0.0.1:1521
@@ -139,13 +124,11 @@ En **Recopilación de datos → Equipos → ZAM-SV-073-19C → Macros** se confi
 {$ORACLE.PASSWORD}   = <secreto>
 ```
 
-La estructura de las macros quedó validada funcionalmente mediante `oracle.ping`.
+La estructura quedó validada mediante `oracle.ping`.
 
 ---
 
 ## 6. Validación directa de credenciales
-
-Se ejecutó desde Oracle Linux:
 
 ```bash
 sqlplus -L ZABBIX_MON@//127.0.0.1:1521/SIAL
@@ -158,45 +141,18 @@ Connected to:
 Oracle Database 19c Enterprise Edition
 ```
 
-Esto confirmó:
-
-- Listener disponible en `127.0.0.1:1521`.
-- `SERVICE_NAME` `SIAL` válido.
-- Usuario `ZABBIX_MON` válido.
-- Contraseña válida.
-- Cuenta habilitada para iniciar sesión.
+Se confirmó listener, servicio, usuario, contraseña y cuenta habilitada.
 
 ---
 
 ## 7. `oracle.ping` devolvía `Down (0)` por `DPI-1047`
 
-**Síntoma en Zabbix**
-
-```text
-Oracle by Zabbix agent 2: Ping
-Último valor: Down (0)
-```
-
-**Error en el log**
-
-Archivo:
-
-```text
-/var/log/zabbix/zabbix_agent2.log
-```
-
-Mensaje:
+**Error**
 
 ```text
 DPI-1047: Cannot locate a 64-bit Oracle Client library:
 "libclntsh.so: cannot open shared object file: No such file or directory"
 ```
-
-**Causa**
-
-La biblioteca Oracle Client sí existía, pero el servicio `zabbix-agent2`, iniciado por `systemd`, no recibía `ORACLE_HOME` ni `LD_LIBRARY_PATH`.
-
-SQL*Plus funcionaba bajo el usuario `oracle` porque esa sesión sí tenía cargado el entorno Oracle.
 
 **Biblioteca utilizada**
 
@@ -210,19 +166,11 @@ Enlace confirmado:
 /u01/app/oracle/product/19.3.0/dbhome_1/lib/libclntsh.so -> libclntsh.so.19.1
 ```
 
-La copia localizada bajo `/home/oracle/Downloads/...` pertenece a archivos de parche y no se utilizó.
-
 ---
 
-## 8. Configuración del entorno Oracle para Agent 2
+## 8. Entorno Oracle para Agent 2
 
-Se creó el directorio de sobrescritura de `systemd`:
-
-```bash
-sudo mkdir -p /etc/systemd/system/zabbix-agent2.service.d
-```
-
-Se creó:
+Archivo:
 
 ```text
 /etc/systemd/system/zabbix-agent2.service.d/oracle.conf
@@ -236,7 +184,7 @@ Environment="ORACLE_HOME=/u01/app/oracle/product/19.3.0/dbhome_1"
 Environment="LD_LIBRARY_PATH=/u01/app/oracle/product/19.3.0/dbhome_1/lib"
 ```
 
-Después se aplicó:
+Aplicación:
 
 ```bash
 sudo systemctl daemon-reload
@@ -245,19 +193,13 @@ sudo systemctl restart zabbix-agent2
 
 Validación:
 
-```bash
-sudo systemctl show zabbix-agent2 -p Environment --value | tr ' ' '\n'
-```
-
-Resultado:
-
 ```text
 CONFFILE=/etc/zabbix/zabbix_agent2.conf
 ORACLE_HOME=/u01/app/oracle/product/19.3.0/dbhome_1
 LD_LIBRARY_PATH=/u01/app/oracle/product/19.3.0/dbhome_1/lib
 ```
 
-**Resultado final en Zabbix**
+Resultado:
 
 ```text
 Oracle by Zabbix agent 2: Ping
@@ -269,9 +211,29 @@ Cambio: +1
 
 ---
 
-## Validación alcanzada
+## 9. Alerta de REDO logs disponibles
 
-Quedaron comprobados los siguientes niveles:
+Zabbix reportó:
+
+```text
+Redo logs available to switch = 0
+```
+
+Consulta en `V$LOG`:
+
+```text
+Grupo 1: CURRENT
+Grupo 2: ACTIVE
+Grupo 3: ACTIVE
+```
+
+La base tiene tres grupos de 200 MB y, con el umbral actual de menos de tres disponibles, la alerta debe revisarse porque uno de los grupos siempre estará en estado `CURRENT`.
+
+**Estado:** en análisis. Pendiente revisar frecuencia de log switches antes de modificar Oracle o el umbral.
+
+---
+
+## Validación alcanzada
 
 1. Zabbix Server puede consultar pasivamente Agent 2.
 2. Agent 2 puede cargar las bibliotecas Oracle Client.
@@ -280,14 +242,14 @@ Quedaron comprobados los siguientes niveles:
 5. El usuario `ZABBIX_MON` puede autenticarse.
 6. Las macros Oracle se expanden correctamente.
 7. `oracle.ping` devuelve `Up (1)`.
+8. La regla de firewall permanece después de `firewall-cmd --reload`.
 
 ---
 
 ## Pendientes
 
-1. Hacer permanente la regla de `firewalld` para `192.20.0.12/32`.
-2. Validar la conectividad después de recargar `firewalld`.
-3. Clonar la plantilla Oracle para excluir consultas relacionadas con ASH por no contar con Diagnostics Pack.
-4. Auditar los permisos exactos de `ZABBIX_MON` contra la plantilla usada.
-5. Revisar las métricas Oracle no soportadas.
-6. Definir criterios de aceptación y checklist final.
+1. Revisar frecuencia de cambios REDO y definir el umbral correcto.
+2. Clonar la plantilla Oracle para excluir consultas relacionadas con ASH.
+3. Auditar los permisos exactos de `ZABBIX_MON` contra la plantilla usada.
+4. Revisar métricas Oracle no soportadas.
+5. Definir criterios de aceptación y checklist final.
