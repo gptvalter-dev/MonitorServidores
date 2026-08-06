@@ -24,6 +24,7 @@ Oracle by Zabbix agent 2
 - La incidencia `DPI-1047` fue resuelta configurando el entorno Oracle del servicio `zabbix-agent2`.
 - `oracle.ping` devuelve actualmente `Up (1)`.
 - No fue necesario instalar Oracle Instant Client porque se reutilizaron las bibliotecas del `ORACLE_HOME` existente.
+- La base opera en modo `NOARCHIVELOG`.
 
 ---
 
@@ -227,9 +228,19 @@ Grupo 2: ACTIVE
 Grupo 3: ACTIVE
 ```
 
-La base tiene tres grupos de 200 MB y, con el umbral actual de menos de tres disponibles, la alerta debe revisarse porque uno de los grupos siempre estará en estado `CURRENT`.
+La base tiene tres grupos de 200 MB. Con uno siempre en estado `CURRENT`, el máximo teórico de grupos disponibles es dos, por lo que un umbral de menos de tres siempre permanecerá en problema.
 
-**Estado:** en análisis. Pendiente revisar frecuencia de log switches antes de modificar Oracle o el umbral.
+También se confirmó:
+
+```text
+LOG_MODE = NOARCHIVELOG
+```
+
+En este modo, los grupos `ACTIVE` no están esperando archivado; siguen siendo necesarios para recuperación de instancia hasta que avance el checkpoint. Si la generación de REDO supera la capacidad de checkpoint/DBWR, un siguiente log switch puede quedar esperando un grupo reutilizable.
+
+No se modificará todavía la base ni el umbral. Primero se medirá la frecuencia real de log switches.
+
+**Estado:** en análisis.
 
 ---
 
