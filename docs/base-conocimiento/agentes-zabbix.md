@@ -96,18 +96,45 @@ Desde Oracle Linux se probaron ambas direcciones:
 
 La directiva `ServerActive` apuntaba a `192.20.0.10:11051`, pero el Zabbix Server publicado en Docker es accesible desde Oracle Linux mediante `192.20.0.12:11051`.
 
-El `Hostname` ya coincide con el nombre técnico del host y la plantilla `Linux by Zabbix agent active` está vinculada directamente.
+El `Hostname` ya coincidía con el nombre técnico del host y la plantilla `Linux by Zabbix agent active` estaba vinculada directamente.
 
-**Corrección pendiente de aplicar**
+**Corrección aplicada**
 
 ```ini
 ServerActive=192.20.0.12:11051
 Hostname=ZAM-SV-073-19C
 ```
 
-Después debe reiniciarse `zabbix-agent2` y confirmarse que desaparecen los errores de actualización de comprobaciones activas.
+Después se reinició el servicio:
 
-**Estado:** causa confirmada; corrección pendiente de validación.
+```bash
+sudo systemctl restart zabbix-agent2
+sudo systemctl is-active zabbix-agent2
+```
+
+Se confirmó que, después del reinicio, no aparecieron nuevos mensajes de:
+
+```text
+cannot connect
+no route to host
+active check configuration update ... started to fail
+```
+
+La configuración efectiva quedó validada con:
+
+```bash
+sudo grep -E '^(ServerActive|Hostname)=' \
+  /etc/zabbix/zabbix_agent2.conf
+```
+
+Resultado:
+
+```text
+ServerActive=192.20.0.12:11051
+Hostname=ZAM-SV-073-19C
+```
+
+**Estado:** corrección aplicada; pendiente confirmar en la interfaz de Zabbix que la comprobación activa cambie de `Desconocido` a disponible y que se recupere la alerta de ausencia de datos.
 
 ---
 
