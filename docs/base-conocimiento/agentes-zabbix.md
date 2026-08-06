@@ -94,7 +94,7 @@ Desde Oracle Linux se probaron ambas direcciones:
 
 **Causa identificada**
 
-La directiva `ServerActive` apuntaba a `192.20.0.10:11051`, pero el Zabbix Server publicado en Docker es accesible desde Oracle Linux mediante `192.20.0.12:11051`.
+La directiva `ServerActive` apuntaba a `192.20.0.10:11051`, pero el Zabbix Server publicado en Docker era accesible desde Oracle Linux mediante `192.20.0.12:11051`.
 
 El `Hostname` ya coincidía con el nombre técnico del host y la plantilla `Linux by Zabbix agent active` estaba vinculada directamente.
 
@@ -134,7 +134,19 @@ ServerActive=192.20.0.12:11051
 Hostname=ZAM-SV-073-19C
 ```
 
-**Estado:** corrección aplicada; pendiente confirmar en la interfaz de Zabbix que la comprobación activa cambie de `Desconocido` a disponible y que se recupere la alerta de ausencia de datos.
+**Validación en Zabbix**
+
+En **Monitoreo → Últimos datos** se confirmó:
+
+```text
+Zabbix agent ping
+Último valor: Up (1)
+Antigüedad de la comprobación: 52 segundos
+```
+
+La métrica Oracle `Ping` permaneció también en `Up (1)`, confirmando que las comprobaciones activas de Linux y las pasivas de Oracle funcionan simultáneamente.
+
+**Estado:** resuelta.
 
 ---
 
