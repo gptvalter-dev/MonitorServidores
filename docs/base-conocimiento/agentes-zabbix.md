@@ -68,27 +68,46 @@ dnf install -y zabbix-agent2
 
 ## 3. Comprobaciones activas sin datos
 
-**Causas identificadas**
+**Síntoma en Zabbix**
 
-- `Hostname` no coincidía exactamente con el nombre técnico del equipo en Zabbix.
-- La plantilla `Linux by Zabbix agent active` no estaba vinculada directamente al host.
-- El agente aún no había actualizado su configuración activa.
+```text
+Linux: Zabbix agent is not available (or no data for 30m)
+Comprobación activa: Desconocido
+```
 
-**Configuración validada**
+**Errores en Agent 2**
+
+```text
+cannot connect to [192.20.0.10:11051]: i/o timeout
+cannot connect to [192.20.0.10:11051]: no route to host
+active check configuration update from host [ZAM-SV-073-19C] started to fail
+```
+
+**Diagnóstico de conectividad**
+
+Desde Oracle Linux se probaron ambas direcciones:
+
+```text
+192.20.0.10:11051 -> SIN CONEXION
+192.20.0.12:11051 -> CONEXION OK
+```
+
+**Causa identificada**
+
+La directiva `ServerActive` apuntaba a `192.20.0.10:11051`, pero el Zabbix Server publicado en Docker es accesible desde Oracle Linux mediante `192.20.0.12:11051`.
+
+El `Hostname` ya coincide con el nombre técnico del host y la plantilla `Linux by Zabbix agent active` está vinculada directamente.
+
+**Corrección pendiente de aplicar**
 
 ```ini
-ServerActive=192.20.0.10:11051
+ServerActive=192.20.0.12:11051
 Hostname=ZAM-SV-073-19C
 ```
 
-En Zabbix:
+Después debe reiniciarse `zabbix-agent2` y confirmarse que desaparecen los errores de actualización de comprobaciones activas.
 
-```text
-Nombre del equipo: ZAM-SV-073-19C
-Plantilla: Linux by Zabbix agent active
-```
-
-**Estado:** resuelta.
+**Estado:** causa confirmada; corrección pendiente de validación.
 
 ---
 
@@ -138,7 +157,6 @@ Se configuró:
 
 ```ini
 Server=192.20.0.10,192.20.0.12
-ServerActive=192.20.0.10:11051
 Hostname=ZAM-SV-073-19C
 ```
 
