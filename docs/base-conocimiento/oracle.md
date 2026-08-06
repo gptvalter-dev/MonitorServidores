@@ -11,7 +11,7 @@ Oracle by Zabbix agent 2
 ```
 
 - La interfaz del agente está configurada en `192.0.0.73:10050`.
-- La interfaz pasiva ya aparece como **Disponible** en Zabbix.
+- La interfaz pasiva aparece como **Disponible** en Zabbix.
 - La base es no-CDB.
 - El `SERVICE_NAME` confirmado es `SIAL`.
 - El usuario `ZABBIX_MON` ya fue creado.
@@ -21,8 +21,9 @@ Oracle by Zabbix agent 2
 - Agent 2 autoriza consultas pasivas desde `192.20.0.10` y `192.20.0.12`.
 - Las macros Oracle están configuradas en el host.
 - La conexión directa por SQL*Plus con `ZABBIX_MON@//127.0.0.1:1521/SIAL` fue exitosa.
-- `oracle.ping` devuelve `Down (0)` porque el proceso `zabbix-agent2` no localiza `libclntsh.so`.
-- La biblioteca Oracle Client sí existe en el `ORACLE_HOME`; no se requiere instalar Instant Client por ahora.
+- La incidencia `DPI-1047` fue resuelta configurando el entorno Oracle del servicio `zabbix-agent2`.
+- `oracle.ping` devuelve actualmente `Up (1)`.
+- No fue necesario instalar Oracle Instant Client porque se reutilizaron las bibliotecas del `ORACLE_HOME` existente.
 
 ---
 
@@ -79,7 +80,7 @@ Estado: Disponible
 Error: ninguno
 ```
 
-**Estado:** resuelta. La regla de `firewalld` para `192.20.0.12/32` sigue pendiente de hacerse permanente al finalizar las validaciones.
+**Estado:** resuelta. La regla de `firewalld` para `192.20.0.12/32` sigue pendiente de hacerse permanente.
 
 ---
 
@@ -138,7 +139,7 @@ En **Recopilación de datos → Equipos → ZAM-SV-073-19C → Macros** se confi
 {$ORACLE.PASSWORD}   = <secreto>
 ```
 
-La estructura visual de las macros es correcta.
+La estructura de las macros quedó validada funcionalmente mediante `oracle.ping`.
 
 ---
 
@@ -157,7 +158,7 @@ Connected to:
 Oracle Database 19c Enterprise Edition
 ```
 
-Esto confirma, usando la misma contraseña introducida manualmente:
+Esto confirmó:
 
 - Listener disponible en `127.0.0.1:1521`.
 - `SERVICE_NAME` `SIAL` válido.
@@ -167,56 +168,126 @@ Esto confirma, usando la misma contraseña introducida manualmente:
 
 ---
 
-## 7. `oracle.ping` devuelve `Down (0)` por `DPI-1047`
+## 7. `oracle.ping` devolvía `Down (0)` por `DPI-1047`
 
-**Síntoma**
-
-En Zabbix:
+**Síntoma en Zabbix**
 
 ```text
 Oracle by Zabbix agent 2: Ping
 Último valor: Down (0)
 ```
 
-En `/var/log/zabbix/zabbix_agent2.log`:
+**Error en el log**
+
+Archivo:
+
+```text
+/var/log/zabbix/zabbix_agent2.log
+```
+
+Mensaje:
 
 ```text
 DPI-1047: Cannot locate a 64-bit Oracle Client library:
 "libclntsh.so: cannot open shared object file: No such file or directory"
 ```
 
-**Causa identificada**
+**Causa**
 
-El complemento Oracle de Agent 2 requiere las bibliotecas cliente de Oracle. SQL*Plus funciona bajo el usuario `oracle` porque su sesión tiene el entorno de Oracle configurado, pero el servicio `zabbix-agent2`, ejecutado por `systemd`, no está encontrando `libclntsh.so` en la ruta de bibliotecas del proceso.
+La biblioteca Oracle Client sí existía, pero el servicio `zabbix-agent2`, iniciado por `systemd`, no recibía `ORACLE_HOME` ni `LD_LIBRARY_PATH`.
 
-Esto descarta, por el momento, un error de usuario, contraseña, listener o `SERVICE_NAME`.
+SQL*Plus funcionaba bajo el usuario `oracle` porque esa sesión sí tenía cargado el entorno Oracle.
 
-**Biblioteca localizada**
+**Biblioteca utilizada**
 
 ```text
 /u01/app/oracle/product/19.3.0/dbhome_1/lib/libclntsh.so.19.1
 ```
 
-También se confirmó el enlace requerido:
+Enlace confirmado:
 
 ```text
 /u01/app/oracle/product/19.3.0/dbhome_1/lib/libclntsh.so -> libclntsh.so.19.1
 ```
 
-Los enlaces y permisos del archivo son válidos. La copia encontrada bajo `/home/oracle/Downloads/...` corresponde a archivos de parche y no debe utilizarse.
-
-Por lo tanto, no se instalará Oracle Instant Client. El siguiente diagnóstico es revisar el entorno que `systemd` entrega al servicio `zabbix-agent2`, especialmente `ORACLE_HOME` y `LD_LIBRARY_PATH`.
-
-**Estado:** biblioteca y enlace confirmados; pendiente revisar el entorno efectivo del servicio.
+La copia localizada bajo `/home/oracle/Downloads/...` pertenece a archivos de parche y no se utilizó.
 
 ---
 
-## Punto de reanudación
+## 8. Configuración del entorno Oracle para Agent 2
 
-Ejecutar:
+Se creó el directorio de sobrescritura de `systemd`:
 
 ```bash
-sudo systemctl show zabbix-agent2 -p Environment
+sudo mkdir -p /etc/systemd/system/zabbix-agent2.service.d
 ```
 
-No modificar todavía el unit file ni registrar rutas globales con `ldconfig` hasta confirmar el entorno actual del servicio.
+Se creó:
+
+```text
+/etc/systemd/system/zabbix-agent2.service.d/oracle.conf
+```
+
+Contenido:
+
+```ini
+[Service]
+Environment="ORACLE_HOME=/u01/app/oracle/product/19.3.0/dbhome_1"
+Environment="LD_LIBRARY_PATH=/u01/app/oracle/product/19.3.0/dbhome_1/lib"
+```
+
+Después se aplicó:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart zabbix-agent2
+```
+
+Validación:
+
+```bash
+sudo systemctl show zabbix-agent2 -p Environment --value | tr ' ' '\n'
+```
+
+Resultado:
+
+```text
+CONFFILE=/etc/zabbix/zabbix_agent2.conf
+ORACLE_HOME=/u01/app/oracle/product/19.3.0/dbhome_1
+LD_LIBRARY_PATH=/u01/app/oracle/product/19.3.0/dbhome_1/lib
+```
+
+**Resultado final en Zabbix**
+
+```text
+Oracle by Zabbix agent 2: Ping
+Último valor: Up (1)
+Cambio: +1
+```
+
+**Estado:** resuelta.
+
+---
+
+## Validación alcanzada
+
+Quedaron comprobados los siguientes niveles:
+
+1. Zabbix Server puede consultar pasivamente Agent 2.
+2. Agent 2 puede cargar las bibliotecas Oracle Client.
+3. Agent 2 puede conectarse al listener local.
+4. El servicio `SIAL` responde.
+5. El usuario `ZABBIX_MON` puede autenticarse.
+6. Las macros Oracle se expanden correctamente.
+7. `oracle.ping` devuelve `Up (1)`.
+
+---
+
+## Pendientes
+
+1. Hacer permanente la regla de `firewalld` para `192.20.0.12/32`.
+2. Validar la conectividad después de recargar `firewalld`.
+3. Clonar la plantilla Oracle para excluir consultas relacionadas con ASH por no contar con Diagnostics Pack.
+4. Auditar los permisos exactos de `ZABBIX_MON` contra la plantilla usada.
+5. Revisar las métricas Oracle no soportadas.
+6. Definir criterios de aceptación y checklist final.
