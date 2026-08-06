@@ -112,82 +112,72 @@ Assuming that agent dropped connection because of access permissions.
 
 ### Diagnóstico de red
 
-Agent 2 sí escuchaba en todas las interfaces:
+Agent 2 escuchaba correctamente en el puerto `10050`:
 
 ```bash
 sudo ss -lntp | grep ':10050'
 ```
 
-```text
-LISTEN 0 4096 *:10050 *:* users:(("zabbix_agent2",pid=<PID>,fd=<FD>))
-```
-
-La interfaz `ens32` pertenecía a la zona `public`. La regla existente autorizaba únicamente:
+La regla existente autorizaba únicamente:
 
 ```text
 192.20.0.10/32 -> 10050/tcp
 ```
 
-La prueba desde Windows confirmó que la conexión salía desde:
+La conexión real llegaba desde:
 
 ```text
-SourceAddress    : 192.20.0.12
-TcpTestSucceeded : False
+192.20.0.12
 ```
 
-Una captura en Oracle Linux confirmó la llegada de los paquetes SYN:
-
-```bash
-sudo timeout 60 tcpdump -nni ens32 tcp port 10050 -c 3
-```
-
-```text
-IP 192.20.0.12.<PUERTO> > 192.0.0.73.10050: Flags [S]
-```
-
-### Corrección de `firewalld`
-
-Se agregó una regla temporal para validar el origen real:
-
-```bash
-sudo firewall-cmd --zone=public \
-  --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
-```
-
-Resultado:
-
-```text
-TcpTestSucceeded : True
-```
+Esto se confirmó con `Test-NetConnection` y `tcpdump`.
 
 ### Corrección de autorización en Agent 2
 
-La configuración original solo permitía:
-
-```ini
-Server=192.20.0.10
-```
-
-Se autorizó también la IP real de origen:
+Se configuró:
 
 ```ini
 Server=192.20.0.10,192.20.0.12
+ServerActive=192.20.0.10:11051
+Hostname=ZAM-SV-073-19C
 ```
 
-Después se reinició y validó el servicio:
+Después se reinició el servicio:
 
 ```bash
 sudo systemctl restart zabbix-agent2
 sudo systemctl is-active zabbix-agent2
 ```
 
+Resultado:
+
 ```text
 active
 ```
 
-### Resultado en Zabbix
+### Regla permanente de `firewalld`
 
-La interfaz pasiva cambió a:
+Después de validar `oracle.ping = Up (1)`, se hizo permanente la autorización para el origen real:
+
+```bash
+sudo firewall-cmd --permanent --zone=public \
+  --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
+
+sudo firewall-cmd --reload
+sudo firewall-cmd --zone=public --list-rich-rules
+```
+
+Resultado confirmado:
+
+```text
+rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept
+rule family="ipv4" source address="192.0.0.0/24" port port="10000" protocol="tcp" accept
+rule family="ipv4" source address="192.20.0.10/32" port port="10050" protocol="tcp" accept
+```
+
+La regla para `192.20.0.10/32` se conserva hasta confirmar que no corresponde a otro Zabbix Server o proxy.
+
+### Resultado en Zabbix
 
 ```text
 192.0.0.73:10050
@@ -195,16 +185,4 @@ Estado: Disponible
 Error: ninguno
 ```
 
-### Pendiente antes del cierre definitivo
-
-La regla de `firewalld` para `192.20.0.12/32` sigue siendo temporal. Debe hacerse permanente después de completar la validación funcional de `oracle.ping`:
-
-```bash
-sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
-sudo firewall-cmd --reload
-```
-
-La regla anterior para `192.20.0.10/32` solo debe retirarse después de confirmar que no corresponde a otro Zabbix Server o proxy.
-
-**Estado:** acceso pasivo resuelto; pendiente persistir la regla de firewall cuando concluya la prueba Oracle.
+**Estado:** resuelta y persistida después de recargar `firewalld`.
