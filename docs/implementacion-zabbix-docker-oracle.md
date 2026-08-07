@@ -13,13 +13,32 @@ El proyecto busca determinar si Zabbix puede utilizarse para monitorear:
 4. Aplicaciones y servicios.
 5. Métricas, alertas y notificaciones.
 
+También se documentan dos alternativas para instalar Zabbix Server:
+
+```text
+Alternativa A: Windows con Docker Desktop
+Alternativa B: Oracle Linux con paquetes y servicios systemd
+```
+
 ---
 
 # 1. Orden recomendado
 
-Seguir las guías en este orden:
+## Paso 1. Elegir una instalación de Zabbix Server
 
-1. Instalar Zabbix Server en Windows con Docker Desktop.
+Utilizar solamente una de las siguientes opciones para el laboratorio:
+
+```text
+1A. Zabbix Server en Windows con Docker Desktop.
+1B. Zabbix Server en Oracle Linux mediante paquetes oficiales.
+```
+
+La opción `1A` es la instalación actualmente validada en el laboratorio.
+
+La opción `1B` está documentada como alternativa más cercana a una instalación Linux tradicional, pero todavía debe ejecutarse y validarse.
+
+Después continuar con:
+
 2. Instalar Agent 2 en Windows.
 3. Instalar Agent 2 en Oracle Linux.
 4. Configurar el monitoreo de Oracle Database.
@@ -36,7 +55,8 @@ No avanzar al siguiente punto cuando la validación final de la guía actual no 
 
 | Paso | Guía | Propósito | Estado |
 |---:|---|---|---|
-| 1 | [Instalación de Zabbix Server en Windows con Docker](guias/01-instalacion-zabbix-windows-docker.md) | Preparar WSL 2, Docker Desktop, MySQL, Zabbix Server y la interfaz web | Validada en laboratorio |
+| 1A | [Instalación de Zabbix Server en Windows con Docker](guias/01-instalacion-zabbix-windows-docker.md) | Preparar WSL 2, Docker Desktop, MySQL, Zabbix Server y la interfaz web | Validada en laboratorio |
+| 1B | [Instalación de Zabbix Server en Oracle Linux](guias/01b-instalacion-zabbix-server-oracle-linux.md) | Instalar Zabbix Server 7.4, MySQL 8.4, Nginx, PHP-FPM y Agent 2 como servicios Linux | Documentada; pendiente de validación |
 | 2 | [Instalación de Zabbix Agent 2 en Windows](guias/02-instalacion-agente-zabbix-windows.md) | Instalar el agente Windows y validar comprobaciones activas | Validada en laboratorio |
 | 3 | [Instalación de Zabbix Agent 2 en Oracle Linux](guias/03-instalacion-agente-zabbix-oracle-linux.md) | Instalar el agente Linux, configurar red, firewall y comprobaciones activas/pasivas | Validada en laboratorio |
 | 4 | [Monitoreo de Oracle Database](guias/04-monitoreo-oracle-database.md) | Configurar usuario, macros, Oracle Client y `Oracle Ping` | Funcional; auditoría pendiente |
@@ -69,6 +89,8 @@ docs/base-conocimiento/
 Síntomas, diagnóstico, causa, solución y evidencia de incidencias.
 ```
 
+Cuando se ejecute la instalación del servidor Zabbix en Oracle Linux, las incidencias encontradas deberán registrarse en un archivo independiente dentro de `docs/base-conocimiento/`.
+
 ---
 
 # 4. Reglas de documentación
@@ -96,6 +118,8 @@ Editar .env
 
 En su lugar se documentará la ubicación, apertura, respaldo, cambio, guardado y validación.
 
+Los procedimientos basados en documentación oficial pero todavía no ejecutados deben marcarse como **pendientes de validación**, sin presentarlos como resultados comprobados.
+
 ---
 
 # 5. Seguridad
@@ -111,6 +135,8 @@ Este repositorio es público. Utilizar valores genéricos:
 <ORACLE_SERVICE>
 <ORACLE_HOME>
 <CONTRASENA_SEGURA>
+<CONTRASENA_ROOT_MYSQL>
+<CONTRASENA_BD_ZABBIX>
 ```
 
 No publicar:
@@ -124,7 +150,9 @@ No publicar:
 
 ---
 
-# 6. Arquitectura del laboratorio
+# 6. Arquitecturas documentadas
+
+## 6.1. Arquitectura actualmente validada
 
 ```text
 Windows
@@ -150,6 +178,38 @@ Comprobaciones pasivas Oracle
 Zabbix Server ───────────────> Agent 2:10050 ─────────> Oracle Database
 ```
 
+## 6.2. Alternativa documentada para Oracle Linux
+
+```text
+Oracle Linux 8.10
+├── MySQL Community Server 8.4
+├── Zabbix Server 7.4
+├── Zabbix Frontend
+├── Nginx
+├── PHP-FPM
+└── Zabbix Agent 2
+```
+
+Servicios principales:
+
+```text
+mysqld
+zabbix-server
+zabbix-agent2
+nginx
+php-fpm
+```
+
+Puertos iniciales de laboratorio:
+
+```text
+8080/TCP   Interfaz web
+10050/TCP  Zabbix Agent 2
+10051/TCP  Zabbix Server
+```
+
+MySQL puede permanecer local cuando la base de datos se encuentra en el mismo servidor.
+
 ---
 
 # 7. Estado actual
@@ -160,6 +220,7 @@ Zabbix Server ───────────────> Agent 2:10050 ─�
 | Zabbix Server 7.4 en Docker | Operativo |
 | Interfaz web | Operativa |
 | MySQL de Zabbix | Operativo |
+| Guía de Zabbix Server en Oracle Linux | Creada; pendiente de ejecución y validación |
 | Agent 2 en Windows | Funcional en laboratorio |
 | Agent 2 en Oracle Linux | Instalado, activo y habilitado |
 | Comprobaciones activas Linux | `Zabbix agent ping = Up (1)` |
@@ -177,6 +238,8 @@ Zabbix Server ───────────────> Agent 2:10050 ─�
 
 **Avance general estimado del laboratorio: 40%.**
 
+La documentación de una alternativa no aumenta el avance técnico hasta que la instalación haya sido ejecutada y validada.
+
 ---
 
 # 8. Hallazgos principales
@@ -185,6 +248,9 @@ Zabbix Server ───────────────> Agent 2:10050 ─�
 - Las variables generales de Compose se encuentran en `.env`.
 - Las variables específicas de componentes se encuentran en `env_vars/.env_<componente>`.
 - Los cambios locales deben respaldarse antes de ejecutar actualizaciones del repositorio.
+- La instalación directa en Oracle Linux utiliza paquetes y servicios administrados con `systemd`.
+- Zabbix no instala automáticamente el motor MySQL; debe instalarse y prepararse antes de importar el esquema.
+- Oracle Linux 8 requiere revisar el módulo MySQL para evitar que oculte los paquetes del repositorio oficial de MySQL.
 - Las comprobaciones activas requieren que `Hostname` coincida exactamente con el nombre técnico del host en Zabbix.
 - `ServerActive` debe apuntar a una dirección y puerto realmente accesibles desde el servidor monitoreado.
 - Las comprobaciones pasivas requieren autorización tanto en `Server=` como en el firewall.
@@ -198,6 +264,9 @@ Zabbix Server ───────────────> Agent 2:10050 ─�
 
 # 9. Pendientes de la exploración
 
+- [ ] Ejecutar la instalación de Zabbix Server 7.4 en un Oracle Linux de prueba.
+- [ ] Validar MySQL 8.4, Nginx, PHP-FPM, SELinux y firewall de la instalación Linux.
+- [ ] Registrar incidencias específicas de Zabbix Server en Oracle Linux.
 - [ ] Confirmar métricas recientes de CPU, memoria, discos y red.
 - [ ] Completar la matriz de interpretación de métricas.
 - [ ] Auditar privilegios exactos de `ZABBIX_MON`.
@@ -249,20 +318,37 @@ Zabbix Server ───────────────> Agent 2:10050 ─�
 - Validación de puerto, proceso o servicio.
 - Alerta funcional por indisponibilidad.
 
+## Alternativa Oracle Linux
+
+Para considerar validada la instalación directa de Zabbix Server en Oracle Linux deben confirmarse:
+
+- MySQL en estado `active`.
+- Zabbix Server en estado `active`.
+- Nginx en estado `active`.
+- PHP-FPM en estado `active`.
+- Agent 2 en estado `active`.
+- Interfaz web accesible.
+- Inicio de sesión correcto.
+- Puerto `10051/TCP` escuchando.
+- Reinicio del sistema sin pérdida de servicios.
+
 ---
 
 # 11. Diferencias entre laboratorio y producción
 
 La instalación actual utiliza Windows, Docker Desktop, puertos alternos y un servidor de prueba.
 
+La alternativa Oracle Linux instala los componentes directamente como servicios del sistema operativo, pero todavía concentra servidor, frontend y base de datos en una sola máquina.
+
 Una implementación productiva deberá evaluar:
 
 - Servidor Linux dedicado para Zabbix.
-- Base de datos dimensionada.
+- Base de datos dimensionada o separada.
 - Respaldo y recuperación.
 - Alta disponibilidad.
 - Zabbix Proxy por ubicación o segmento.
 - TLS entre agentes, proxies y servidor.
+- HTTPS con certificado válido.
 - Gestión segura de secretos.
 - Reglas de firewall definitivas.
 - Retención de históricos y tendencias.
@@ -276,6 +362,10 @@ Una implementación productiva deberá evaluar:
 - [Manual actual de Zabbix](https://www.zabbix.com/documentation/current/es/manual)
 - [Instalación desde contenedores](https://www.zabbix.com/documentation/7.4/es/manual/installation/containers)
 - [Actualización desde contenedores](https://www.zabbix.com/documentation/7.4/es/manual/installation/upgrade/containers)
+- [Instalación desde paquetes](https://www.zabbix.com/documentation/7.4/es/manual/installation/install_from_packages)
+- [Requisitos de Zabbix 7.4](https://www.zabbix.com/documentation/7.4/es/manual/installation/requirements)
+- [Repositorio oficial para Oracle Linux 8](https://repo.zabbix.com/zabbix/7.4/release/oracle/8/noarch/)
+- [MySQL Yum Repository](https://dev.mysql.com/downloads/repo/yum/)
 - [Zabbix Agent en Windows](https://www.zabbix.com/documentation/7.4/en/manual/appendix/install/windows_agent)
 - [Comprobaciones activas](https://www.zabbix.com/documentation/current/en/manual/guides/monitor_active)
 - [Integración oficial de Oracle](https://www.zabbix.com/integrations/oracle)
