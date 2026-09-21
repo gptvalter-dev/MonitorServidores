@@ -1,207 +1,133 @@
 # Checklist preventivo para despliegues Zabbix sobre Linux
 
-> Propósito: ejecutar esta revisión antes de instalar Zabbix Server o incorporar un nuevo host Linux, Oracle Database o servidor Docker. La intención es detectar problemas de infraestructura antes de comenzar a parametrizar Zabbix.
+> Ejecutar esta revisión antes de instalar Zabbix Server o incorporar un host Linux, Oracle Database, Docker o MongoDB. No marcar un punto por suposición: cada control debe tener evidencia.
 
-No marcar un punto como completado por suposición. Cada punto debe tener evidencia: comando, captura, valor observado o responsable que lo confirma.
+## A. Sistema operativo e identidad
 
----
-
-# A. Zabbix Server Linux
-
-## Identidad y sistema operativo
-
-- [ ] Distribución y versión confirmadas.
-- [ ] Hostname definitivo confirmado.
-- [ ] IP fija o reserva confirmada.
-- [ ] Gateway correcto.
+- [ ] Distribución y versión exactas documentadas.
+- [ ] Kernel documentado.
+- [ ] Hostname definitivo.
+- [ ] IP fija/reserva y gateway confirmados.
 - [ ] DNS revisado cuando aplique.
 - [ ] Zona horaria correcta.
-- [ ] Sincronización NTP/chrony correcta.
-
-Comandos:
+- [ ] NTP/chrony sincronizado.
+- [ ] CPU, RAM, discos y filesystems inventariados.
+- [ ] SELinux en estado conocido.
+- [ ] `firewalld` en estado conocido.
 
 ```bash
 cat /etc/os-release
+uname -r
 hostnamectl
 ip addr
 ip route
 timedatectl
 chronyc tracking
-```
-
-## Capacidad
-
-- [ ] CPU disponible documentada.
-- [ ] Memoria disponible documentada.
-- [ ] Espacio en filesystem documentado.
-- [ ] Espacio para base de datos considerado.
-- [ ] Retención de históricos y tendencias considerada.
-- [ ] Crecimiento esperado de hosts y métricas considerado.
-
-```bash
 lscpu
 free -m
-df -h
 lsblk
-```
-
-## Seguridad Linux
-
-- [ ] SELinux revisado y mantenido habilitado cuando sea posible.
-- [ ] `firewalld` activo.
-- [ ] Puertos necesarios identificados antes de abrirlos.
-- [ ] Acceso administrativo restringido.
-- [ ] Credenciales predeterminadas serán sustituidas.
-
-```bash
+df -h
 getenforce
 firewall-cmd --state
-firewall-cmd --list-all
 ```
 
-## Servicios
+## B. Red Zabbix
 
-- [ ] Motor de base de datos instalado y soportado.
-- [ ] Zabbix Server instalado.
-- [ ] Frontend instalado.
-- [ ] Nginx/Apache instalado según diseño.
-- [ ] PHP-FPM instalado cuando aplique.
-- [ ] Agent 2 instalado para monitorear el propio servidor.
-- [ ] Todos los servicios habilitados al arranque.
-
-Validar después de instalar:
-
-```bash
-systemctl is-enabled <servicio>
-systemctl is-active <servicio>
-```
-
-## Reinicio obligatorio de validación
-
-Antes de considerar terminada la instalación:
-
-- [ ] Reiniciar el servidor Linux.
-- [ ] Confirmar que todos los servicios regresan automáticamente.
-- [ ] Confirmar que la interfaz web responde.
-- [ ] Confirmar que Zabbix Server escucha en `10051/TCP`.
-- [ ] Confirmar que Agent 2 funciona después del reinicio.
-
----
-
-# B. Red antes de instalar cualquier agente
-
-- [ ] IP del Zabbix Server confirmada.
-- [ ] Se conoce la red del host monitoreado.
-- [ ] Existe ruta entre ambas redes.
-- [ ] No existe NAT desconocido.
-- [ ] `10051/TCP` es accesible desde el host cuando se usarán comprobaciones activas.
-- [ ] `10050/TCP` es accesible desde Zabbix Server cuando se usarán comprobaciones pasivas.
-- [ ] Se conoce la IP real que llegará al agente en comprobaciones pasivas.
-- [ ] Firewall perimetral y firewall local están alineados.
-
-Desde el host monitoreado:
+- [ ] IP/DNS del Zabbix Server o Proxy confirmada desde el host monitoreado.
+- [ ] Ruta de red confirmada.
+- [ ] `10051/TCP` accesible cuando se usen checks activos.
+- [ ] `10050/TCP` accesible desde Server/Proxy cuando se usen checks pasivos.
+- [ ] IP real de origen de checks pasivos conocida.
+- [ ] NAT/balanceadores documentados.
+- [ ] Puertos alternos documentados y justificados.
+- [ ] Firewall perimetral y local alineados.
 
 ```bash
 ip route get <IP_ZABBIX_SERVER>
-timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/10051' \
-  && echo "CONEXION OK" \
-  || echo "SIN CONEXION"
+timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/10051'
 ```
 
-Desde Zabbix Server, cuando aplique:
+Desde Zabbix Server/Proxy cuando aplique:
 
 ```bash
 nc -vz <IP_HOST> 10050
 ```
 
-Cuando el origen real sea dudoso:
+Si el origen real es dudoso:
 
 ```bash
 sudo tcpdump -nni <INTERFAZ> tcp port 10050
 ```
 
----
+## C. Zabbix Agent 2
 
-# C. Agent 2 en Linux
-
-Antes de crear el host en Zabbix:
-
-- [ ] Repositorio compatible con la versión de Zabbix.
-- [ ] Agent 2 instalado.
-- [ ] Archivo original respaldado.
-- [ ] `Hostname` definido.
-- [ ] `Hostname` coincide exactamente con el nombre técnico del host en Zabbix.
-- [ ] `ServerActive` apunta a la IP correcta del Zabbix Server.
-- [ ] `Server=` contiene únicamente orígenes autorizados.
-- [ ] `ListenPort=10050` cuando se usarán comprobaciones pasivas.
-- [ ] Sintaxis validada.
+- [ ] Versión del Zabbix Server documentada.
+- [ ] Agent 2 de rama compatible.
+- [ ] Instalación previa revisada antes de instalar otra.
+- [ ] Archivo de configuración respaldado.
+- [ ] `Hostname` coincide con el nombre técnico del host.
+- [ ] `ServerActive=` apunta al Server/Proxy correcto.
+- [ ] `Server=` contiene solo orígenes autorizados.
+- [ ] `ListenPort` confirmado cuando se usen checks pasivos.
+- [ ] Solo están instalados/activos los plugins necesarios.
+- [ ] Configuración validada antes de reiniciar.
 - [ ] Servicio habilitado al arranque.
-- [ ] Logs revisados después de reiniciar.
-
-Comandos:
+- [ ] Logs revisados después del reinicio.
 
 ```bash
-sudo cp -a /etc/zabbix/zabbix_agent2.conf \
-  /etc/zabbix/zabbix_agent2.conf.respaldo
-
+zabbix_agent2 -V
 sudo zabbix_agent2 -T -c /etc/zabbix/zabbix_agent2.conf
 sudo systemctl enable --now zabbix-agent2
 sudo systemctl is-active zabbix-agent2
-sudo ss -lntp | grep ':10050'
+sudo systemctl is-enabled zabbix-agent2
 sudo journalctl -u zabbix-agent2 -n 100 --no-pager
 ```
 
-No continuar con plantillas de aplicación si `Zabbix agent ping` todavía no tiene datos recientes.
+No continuar con una integración de aplicación si el agente base todavía falla.
 
----
-
-# D. Plantillas
+## D. Plantillas y elementos
 
 Antes de vincular una plantilla:
 
-- [ ] Confirmar que corresponde al producto que realmente existe en el host.
-- [ ] Confirmar compatibilidad con la versión de Zabbix.
-- [ ] Identificar si usa comprobaciones activas, pasivas o ambas.
-- [ ] Identificar interfaces requeridas.
-- [ ] Revisar macros heredadas.
-- [ ] Revisar reglas de descubrimiento.
-- [ ] Revisar dependencias externas.
-- [ ] Revisar permisos necesarios.
-- [ ] Revisar implicaciones de licenciamiento.
-- [ ] No modificar una plantilla oficial directamente.
-- [ ] No insertar una plantilla de aplicación dentro de una plantilla de sistema operativo sin una decisión de diseño explícita.
+- [ ] Producto y versión reales identificados.
+- [ ] Versión de Zabbix compatible.
+- [ ] Versiones probadas declaradas por la plantilla revisadas.
+- [ ] Tipo de checks (activo/pasivo/dependiente) entendido.
+- [ ] Interfaz requerida configurada.
+- [ ] Macros heredadas revisadas.
+- [ ] Reglas LLD revisadas.
+- [ ] Dependencias y permisos identificados.
+- [ ] Implicaciones de licenciamiento revisadas.
+- [ ] Plantilla oficial conservada sin cambios en producción.
+- [ ] Adaptaciones realizadas en una copia controlada.
+- [ ] Todo item `No soportada` tiene causa y decisión documentadas.
 
 Estructura preferida:
 
 ```text
 Host
 ├── Linux by Zabbix agent active
-├── Docker by Zabbix agent 2        (si aplica)
-├── Oracle by Zabbix agent 2        (si aplica)
-└── Plantillas propias de aplicación
+├── Docker by Zabbix agent 2       (si aplica)
+├── Oracle by Zabbix agent 2       (si aplica)
+├── MongoDB ...                    (si aplica)
+└── Plantillas propias
 ```
 
----
-
-# E. Oracle Database
-
-Antes de vincular la plantilla Oracle:
+## E. Oracle Database
 
 - [ ] Listener funcionando.
 - [ ] `SERVICE_NAME` confirmado.
 - [ ] CDB/no-CDB confirmado.
-- [ ] Usuario de monitoreo dedicado creado.
+- [ ] Usuario dedicado de monitoreo.
 - [ ] Privilegios mínimos revisados.
-- [ ] Licenciamiento Oracle revisado.
-- [ ] SQL*Plus directo probado con el usuario de monitoreo.
+- [ ] Licenciamiento revisado antes de habilitar métricas.
+- [ ] SQL*Plus directo probado.
 - [ ] `ORACLE_HOME` confirmado.
 - [ ] `libclntsh.so` localizado.
-- [ ] Arquitectura 64 bits confirmada.
+- [ ] Arquitectura de Oracle Client correcta.
 - [ ] Entorno efectivo de `zabbix-agent2` revisado.
-- [ ] Macros configuradas como secreto cuando corresponda.
+- [ ] Macros sensibles protegidas.
 - [ ] Plantilla Oracle vinculada directamente al host.
-
-Comandos:
 
 ```bash
 lsnrctl status
@@ -210,32 +136,27 @@ find <ORACLE_HOME> -name 'libclntsh.so*'
 systemctl show zabbix-agent2 -p Environment
 ```
 
-Criterio de salida:
+Criterio mínimo:
 
 ```text
 Oracle Ping = Up (1)
 ```
 
----
+## F. Docker Engine
 
-# F. Servidor de aplicaciones con Docker
-
-Antes de vincular `Docker by Zabbix agent 2`:
-
-- [ ] Sistema operativo del host identificado.
-- [ ] Docker Engine funciona.
+- [ ] Docker Engine y versión confirmados.
 - [ ] Inventario de contenedores generado.
-- [ ] Aplicación asociada a cada contenedor identificada.
+- [ ] Aplicación/función de cada contenedor identificada.
+- [ ] Imagen y versión documentadas.
 - [ ] Puertos publicados documentados.
 - [ ] Redes Docker documentadas.
 - [ ] Volúmenes documentados.
 - [ ] Política de reinicio documentada.
+- [ ] Límites CPU/RAM documentados.
 - [ ] Agent 2 instalado en el host Linux.
 - [ ] Acceso de Agent 2 al socket Docker revisado.
-- [ ] Contenedores que deben excluirse del monitoreo identificados.
-- [ ] Endpoint funcional de cada aplicación crítica identificado.
-
-Comandos:
+- [ ] Contenedores a excluir identificados.
+- [ ] Healthcheck/endpoint funcional definido para servicios críticos.
 
 ```bash
 docker version
@@ -247,124 +168,148 @@ ls -l /var/run/docker.sock
 id zabbix
 ```
 
-Para cada aplicación completar:
+Regla:
 
 ```text
-Aplicación:
-Contenedor:
-Imagen:
-Puerto interno:
-Puerto publicado:
-URL de salud:
-Endpoint crítico:
-Dependencias:
-Responsable:
+container running != aplicación saludable
 ```
 
-Criterio importante:
+## G. MongoDB en Docker
 
-```text
-Contenedor running != aplicación saludable
-```
+Antes de vincular `MongoDB node by Zabbix agent 2`:
 
-La aplicación debe tener validación propia por puerto, HTTP/HTTPS, código de respuesta o endpoint.
+### Inventario por instancia
 
----
+- [ ] Nombre lógico de la instancia.
+- [ ] Contenedor e imagen/versión.
+- [ ] Endpoint/puerto estable y único.
+- [ ] Volumen de datos exclusivo y persistente.
+- [ ] Límite de RAM/CPU por contenedor.
+- [ ] Replica Set / standalone identificado.
+- [ ] Política de reinicio.
+- [ ] Estrategia de backup/restore.
 
-# G. Firewall
+### Host Linux para MongoDB
 
-- [ ] Toda regla necesaria es permanente.
+- [ ] Filesystem de datos XFS o EXT4; preferir XFS para WiredTiger cuando sea viable.
+- [ ] NTP activo.
+- [ ] `vm.swappiness` revisado (`0` o `1` según diseño).
+- [ ] THP revisado según versión de MongoDB (MongoDB 8.x tiene recomendaciones distintas a 7.x y anteriores).
+- [ ] `ulimit`/open files revisados.
+- [ ] `vm.max_map_count` revisado si MongoDB genera advertencia para la versión instalada.
+- [ ] RAM total del host suficiente para todas las instancias.
+- [ ] Caché WiredTiger dimensionada considerando límites del contenedor y múltiples `mongod`.
+
+### Seguridad y permisos
+
+- [ ] Autenticación MongoDB habilitada.
+- [ ] Usuario `zabbix_monitor` creado en `admin`.
+- [ ] `clusterMonitor` validado.
+- [ ] `readAnyDatabase` evaluado/requerido para LLD y estadísticas.
+- [ ] No se usa cuenta `admin` para monitoreo.
+- [ ] MongoDB no se publica a `0.0.0.0` sin necesidad.
+- [ ] Credenciales no están versionadas en GitHub.
+
+### Plugin/plantilla
+
+- [ ] Plugin MongoDB instalado y versión compatible.
+- [ ] Configuración Agent 2 pasa `-T`.
+- [ ] `mongodb.ping = 1`.
+- [ ] `mongodb.db.discovery` probado.
+- [ ] `mongodb.collections.discovery` probado cuando corresponda.
+- [ ] `mongodb.collections.usage` probado cuando corresponda.
+- [ ] `mongodb.server.status` devuelve datos.
+- [ ] Plantilla oficial revisada contra la versión exacta de MongoDB.
+- [ ] Para MongoDB 8.x se usa una copia controlada si hay adaptaciones.
+- [ ] Triggers legacy de tickets WiredTiger no se usan sin validar semántica actual.
+
+### Varias instancias en un host
+
+- [ ] Cada Mongo tiene puerto/endpoint distinto.
+- [ ] Cada Mongo tiene volumen distinto.
+- [ ] Cada Mongo tiene identidad Zabbix independiente cuando se requiera.
+- [ ] Sesiones con nombre o macros de host claramente separadas.
+- [ ] Una caída de `mongo01` no mezcla ni invalida `mongo02`/`mongo03`.
+- [ ] Se probó consumo agregado de RAM/CPU/I/O.
+
+Ver procedimiento: [Monitoreo de MongoDB en Docker](guias/10-monitoreo-mongodb-docker.md).
+
+## H. Firewall y SELinux
+
+- [ ] Reglas necesarias son permanentes.
 - [ ] No existen aperturas generales innecesarias.
-- [ ] Se autoriza únicamente el origen requerido.
-- [ ] Se recargó `firewalld` después de crear reglas.
-- [ ] Se comprobó que las reglas permanecen después del reload.
-- [ ] Se validó de nuevo conectividad después del reload.
+- [ ] Solo se autorizan orígenes requeridos.
+- [ ] `firewalld --reload` ejecutado después de cambios.
+- [ ] Conectividad revalidada después del reload.
+- [ ] SELinux permanece habilitado cuando sea posible.
+- [ ] Cualquier excepción SELinux está documentada.
 
 ```bash
 sudo firewall-cmd --reload
 sudo firewall-cmd --list-all
 sudo firewall-cmd --list-rich-rules
+getenforce
 ```
 
-No considerar resuelta una incidencia de firewall solo porque funcionó antes del `reload`.
-
----
-
-# H. Métricas y alertas
+## I. Métricas y alertas
 
 Antes de modificar un umbral:
 
-- [ ] Nombre exacto de la métrica identificado.
-- [ ] Unidad confirmada.
-- [ ] Intervalo de actualización confirmado.
-- [ ] Expresión del trigger leída.
-- [ ] Macro del umbral identificada.
-- [ ] Valor normal observado durante un periodo razonable.
-- [ ] Pico aislado diferenciado de condición sostenida.
+- [ ] Nombre exacto de métrica.
+- [ ] Unidad.
+- [ ] Intervalo.
+- [ ] Expresión del trigger.
+- [ ] Macro del umbral.
+- [ ] Valor normal observado.
+- [ ] Pico aislado vs condición sostenida diferenciados.
 - [ ] Métricas relacionadas revisadas.
-- [ ] Arquitectura real comparada contra el supuesto de la plantilla.
-- [ ] Motivo de cualquier cambio documentado.
+- [ ] Semántica confirmada para la versión actual de la aplicación.
+- [ ] Cambio documentado.
 
-Regla:
+No cambiar infraestructura solo para cerrar una alerta genérica.
 
-```text
-No modificar el servidor solo para cerrar una alerta genérica.
-Primero comprender la métrica y su contexto.
-```
+## J. Seguridad de operación
 
----
+- [ ] Sin secretos reales en GitHub.
+- [ ] Macros sensibles como secreto cuando aplique.
+- [ ] Privilegio mínimo.
+- [ ] Sin `sudo NOPASSWD: ALL` para `zabbix`.
+- [ ] Sin `AllowKey=system.run[*]` general sin justificación.
+- [ ] Acceso al socket Docker tratado como privilegio elevado.
+- [ ] TLS evaluado para producción.
+- [ ] Credenciales predeterminadas sustituidas.
 
-# I. Seguridad de operación
+## K. Validación final de cada integración
 
-- [ ] No guardar secretos reales en GitHub.
-- [ ] Usar macros secretas.
-- [ ] Aplicar privilegio mínimo.
-- [ ] No usar `sudo NOPASSWD: ALL` para el usuario zabbix.
-- [ ] No habilitar `AllowKey=system.run[*]` sin justificación.
-- [ ] Revisar acceso al socket Docker antes de agregar permisos.
-- [ ] Mantener SELinux habilitado y resolver la política correcta.
-- [ ] Evaluar TLS entre agentes, proxies y servidor en producción.
-- [ ] Sustituir credenciales predeterminadas del frontend.
-
----
-
-# J. Validación final de cada host
-
-No entregar un host como monitoreado hasta verificar:
-
-- [ ] Host visible en Zabbix.
-- [ ] `Zabbix agent ping` reciente.
-- [ ] CPU con datos recientes.
-- [ ] Memoria con datos recientes.
-- [ ] Filesystems con datos recientes.
-- [ ] Red con datos recientes.
-- [ ] Plantilla específica del servicio funcionando.
-- [ ] No existen elementos no soportados sin explicación.
-- [ ] Problemas revisados.
-- [ ] Zona horaria correcta.
+- [ ] Host visible.
+- [ ] Agent 2 con datos recientes.
+- [ ] CPU/RAM/filesystems/red con datos recientes.
+- [ ] Integración específica con datos.
+- [ ] Sin elementos no soportados sin explicación.
+- [ ] Problemas activos revisados.
+- [ ] Falla controlada probada cuando sea seguro.
+- [ ] Recuperación probada.
 - [ ] Reinicio del agente probado.
-- [ ] Reinicio del servidor probado cuando el cambio lo requiere.
-- [ ] Evidencia registrada.
+- [ ] Reinicio del host probado cuando corresponda.
+- [ ] Persistencia de firewall/servicios/volúmenes confirmada.
+- [ ] Backup/restore probado para componentes con datos.
+- [ ] Evidencia y cambios documentados.
 
----
-
-# K. Secuencia obligatoria de diagnóstico
-
-Cuando algo falle, revisar en este orden:
+## L. Secuencia de diagnóstico
 
 ```text
 1. Sistema operativo
-2. IP y ruta
-3. Firewall
+2. IP/ruta
+3. Firewall/SELinux
 4. Puerto
 5. Servicio
-6. Configuración de Agent 2
-7. Permisos del usuario zabbix
-8. Dependencia externa (Oracle, Docker, HTTP, etc.)
-9. Plantilla
-10. Macros
-11. Elemento
+6. Agent 2
+7. Plugin/permisos
+8. Dependencia externa
+9. Plantilla/macros
+10. Item/preprocesamiento
+11. LLD
 12. Trigger
 ```
 
-Evitar modificar tres componentes a la vez. Hacer un cambio, validar y documentar antes del siguiente.
+Hacer un cambio por vez y validar antes del siguiente.
