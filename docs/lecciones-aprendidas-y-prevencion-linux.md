@@ -1,660 +1,211 @@
 # Lecciones aprendidas y prevención para una arquitectura Zabbix sobre Linux
 
-> Objetivo: concentrar los aprendizajes obtenidos durante el laboratorio y convertirlos en controles preventivos para la siguiente etapa, donde se busca que la solución quede basada en Linux.
+> Propósito: conservar **principios transversales** aprendidos durante el laboratorio. Los comandos y controles ejecutables están centralizados en [Checklist preventivo Linux](checklist-preventivo-linux.md); las incidencias concretas están en [Base de conocimiento](base-conocimiento/README.md).
 
-Este documento no sustituye las guías de instalación. Su función es responder dos preguntas:
+## 1. Dirección objetivo
 
-1. ¿Qué aprendimos de los problemas ya encontrados?
-2. ¿Qué debemos revisar antes de instalar o integrar un nuevo servidor para evitar repetirlos?
-
----
-
-# 1. Dirección objetivo de la arquitectura
-
-La meta para la siguiente etapa es reducir dependencias de Windows, WSL 2 y Docker Desktop y operar Zabbix principalmente sobre Linux.
-
-Arquitectura objetivo inicial:
+La plataforma central debe simplificarse hacia Linux/Oracle Linux y reducir dependencias de Windows, WSL 2, NAT de escritorio y puertos alternos.
 
 ```text
-Oracle Linux / Linux dedicado
+Zabbix Server Linux
+├── Base de datos
 ├── Zabbix Server
-├── Zabbix Frontend
-├── Base de datos de Zabbix
-├── Zabbix Agent 2
-└── Servicios administrados por systemd
+├── Frontend
+└── Agent 2
 
 Servidores monitoreados
-├── Oracle Linux con Oracle Database
-├── Linux con aplicaciones
-├── Linux con Docker
-└── Otros servidores según inventario
+├── Linux / Oracle Linux
+├── Oracle Database
+└── Linux + Docker
+    ├── aplicaciones
+    └── MongoDB
 ```
 
-Esto no significa que Windows no pueda monitorearse. Significa que el servidor central de monitoreo y la mayor parte de la operación deben quedar en Linux para reducir complejidad de red, NAT, puertos alternos y dependencias de escritorio.
+Windows continúa siendo un sistema monitoreable y un laboratorio válido; no es la arquitectura objetivo del servidor central.
 
----
+## 2. Lecciones transversales
 
-# 2. Lecciones aprendidas
+### 2.1. Validar la ruta real de red, no la IP que parece correcta
 
-## 2.1. No asumir que una IP es alcanzable solo porque pertenece al servidor correcto
+Un equipo puede tener varias interfaces, NAT o rutas diferentes. Antes de usar `ServerActive`, `Server=` o una interfaz Zabbix, probar conectividad desde el origen real.
 
-Durante el laboratorio se configuró inicialmente una dirección del equipo Windows que no era accesible desde Oracle Linux.
+**Principio:** una IP correcta administrativamente no es necesariamente una IP alcanzable desde el componente que hará la conexión.
 
-El agente intentaba conectarse a:
+### 2.2. Checks activos y pasivos son flujos independientes
 
 ```text
-<IP_NO_ACCESIBLE>:11051
+Activo:  host monitoreado -> Zabbix Server:10051
+Pasivo:  Zabbix Server/Proxy -> Agent 2:10050
 ```
 
-mientras que otra dirección del mismo equipo sí era alcanzable.
+`ServerActive=` y `Server=` resuelven problemas distintos. Cada flujo debe validarse por separado.
 
-Lección:
+### 2.3. El `Hostname` técnico debe coincidir exactamente
+
+En checks activos, el nombre configurado por el Agent 2 debe coincidir con el nombre técnico del host en Zabbix. No confundirlo con el nombre visible del equipo ni con el hostname del sistema operativo si se usa una convención diferente.
+
+### 2.4. Diagnosticar por capas
+
+Orden preferido:
 
 ```text
-No configurar ServerActive únicamente por intuición o por la IP que aparece primero.
+Sistema operativo
+  -> red/ruta
+  -> firewall
+  -> puerto
+  -> servicio
+  -> configuración Agent 2
+  -> permisos
+  -> dependencia externa
+  -> plantilla/macros
+  -> item
+  -> trigger
 ```
 
-Antes de parametrizar un agente se debe probar desde el propio servidor monitoreado:
+No modificar tres capas a la vez. Hacer un cambio, validar, documentar y continuar.
 
-```bash
-timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/10051' \
-  && echo "CONEXION OK" \
-  || echo "SIN CONEXION"
-```
+### 2.5. Un puerto abierto no demuestra que la integración funciona
 
-En la instalación Linux objetivo se debe preferir una dirección fija, documentada y directamente enrutable.
+Conectividad TCP solo valida transporte. Todavía pueden fallar `Hostname`, permisos, credenciales, macros, librerías, plugins, JSONPath o la propia aplicación.
 
----
+### 2.6. Validar configuración antes de reiniciar servicios
 
-## 2.2. Activo y pasivo son flujos distintos
+Agent 2 puede dejar de iniciar por una configuración o plugin ajeno al cambio actual. En el laboratorio un plugin NVIDIA defectuoso bloqueó el arranque completo del Agent 2.
 
-Se comprobó que un agente podía funcionar en un sentido y fallar en el otro.
+**Principio:** validar sintaxis/configuración antes de reiniciar y revisar logs inmediatamente después.
 
-Comprobación activa:
+La incidencia está documentada en [Agentes Zabbix](base-conocimiento/agentes-zabbix.md).
+
+### 2.7. Las reglas de firewall deben sobrevivir al reload/reinicio
+
+Una apertura temporal no es una solución terminada. Toda regla necesaria debe ser mínima, persistente y probada después de recargar el firewall.
+
+### 2.8. No modificar plantillas oficiales directamente en producción
+
+Las plantillas oficiales deben conservarse como referencia actualizable. Si Oracle, MongoDB u otra integración requiere adaptar items, permisos, licenciamiento o JSONPath, crear una copia controlada con nombre y versión propios.
+
+### 2.9. Una plantilla compatible con Zabbix no garantiza compatibilidad perfecta con cualquier versión de la aplicación
+
+MongoDB 8.2.x demostró que una plantilla de Zabbix 7.4 puede contener métricas diseñadas/probadas con versiones anteriores del producto.
+
+**Principio:** revisar la versión exacta de la aplicación, las versiones probadas por la plantilla y todo elemento `No soportada` antes de producción.
+
+Detalles: [MongoDB Docker: incidencias y compatibilidad](base-conocimiento/mongodb-docker-lecciones-linux.md).
+
+### 2.10. Probar primero la dependencia externa
+
+Antes de responsabilizar a Zabbix, probar directamente la tecnología monitoreada:
 
 ```text
-Servidor monitoreado ---> Zabbix Server:10051
+Oracle -> SQL*Plus/listener
+MongoDB -> mongosh/serverStatus
+Docker -> docker ps/docker info
+HTTP -> curl
+Linux -> systemctl/ss
 ```
 
-Comprobación pasiva:
+Si la dependencia falla fuera de Zabbix, corregirla antes de tocar la plantilla.
+
+### 2.11. Los servicios `systemd` tienen su propio entorno
+
+Que una librería o variable funcione en una terminal de usuario no implica que esté disponible para `zabbix-agent2` iniciado por `systemd`. Este punto fue determinante con Oracle Client.
+
+### 2.12. Privilegio mínimo antes que “hacer que funcione”
+
+No resolver errores otorgando roles amplios, `sudo` general, permisos `777`, acceso global al socket Docker o credenciales administrativas.
+
+Primero identificar la operación exacta requerida; después otorgar el mínimo permiso y documentarlo.
+
+### 2.13. Licenciamiento forma parte del diseño técnico
+
+En Oracle, una métrica técnicamente accesible puede depender de opciones licenciadas. Antes de activar plantillas completas se deben revisar consultas, vistas y privilegios.
+
+### 2.14. Un contenedor `running` no equivale a una aplicación sana
+
+Separar siempre:
 
 ```text
-Zabbix Server ---> Agent 2:10050
-```
-
-Lección:
-
-- `ServerActive=` no sustituye a `Server=`.
-- Abrir `10051/TCP` no garantiza que `10050/TCP` funcione.
-- Cada flujo debe validarse por separado.
-
----
-
-## 2.3. El valor de Hostname debe coincidir exactamente
-
-Las comprobaciones activas dependen del nombre técnico del host configurado en Zabbix.
-
-Lección:
-
-Antes de reiniciar Agent 2 validar:
-
-```ini
-Hostname=<NOMBRE_EXACTO_DEL_HOST_EN_ZABBIX>
-```
-
-No confundir:
-
-- hostname real del sistema operativo;
-- nombre visible en Zabbix;
-- nombre técnico del host en Zabbix.
-
----
-
-## 2.4. El origen real de una conexión puede ser distinto al esperado
-
-Con Docker Desktop, WSL 2, NAT y múltiples interfaces se observó que la IP de origen de la comprobación pasiva no siempre coincidía con la que inicialmente se suponía.
-
-Lección:
-
-Cuando una conexión pasiva falla aunque la red parezca correcta, capturar tráfico:
-
-```bash
-sudo tcpdump -nni <INTERFAZ> tcp port 10050
-```
-
-La IP observada debe coincidir con:
-
-```ini
-Server=<IP_ORIGEN_REAL>
-```
-
-y con la regla de firewall.
-
-Una arquitectura Linux directa debe reducir este tipo de traducciones y simplificar el diagnóstico.
-
----
-
-## 2.5. Las reglas temporales de firewall no son suficientes
-
-Durante las pruebas fue necesario confirmar que las reglas sobrevivieran a `firewall-cmd --reload`.
-
-Lección:
-
-Toda regla que forme parte de la solución debe crearse como permanente:
-
-```bash
-sudo firewall-cmd --permanent ...
-sudo firewall-cmd --reload
-```
-
-Después comprobar:
-
-```bash
-sudo firewall-cmd --list-all
-sudo firewall-cmd --list-rich-rules
-```
-
-No considerar una incidencia resuelta hasta validar persistencia.
-
----
-
-## 2.6. Un puerto abierto no significa que la aplicación esté correctamente configurada
-
-Puede existir conectividad TCP y aun así fallar Zabbix por:
-
-- `Hostname` incorrecto;
-- `Server=` incorrecto;
-- credenciales;
-- macros;
-- librerías;
-- permisos;
-- plantilla equivocada.
-
-Lección:
-
-Validar por capas:
-
-```text
-1. Red
-2. Puerto
-3. Servicio
-4. Configuración Zabbix
-5. Permisos
-6. Aplicación o base de datos
-7. Métrica final en Zabbix
-```
-
----
-
-## 2.7. No modificar plantillas oficiales directamente
-
-La plantilla Oracle fue relacionada de forma incorrecta con la plantilla Linux durante la exploración.
-
-Lección:
-
-Las plantillas oficiales deben permanecer independientes y reutilizables.
-
-Estructura correcta:
-
-```text
-Host Oracle Linux
-├── Linux by Zabbix agent active
-└── Oracle by Zabbix agent 2
-```
-
-No:
-
-```text
-Linux by Zabbix agent active
-└── Oracle by Zabbix agent 2
-```
-
-Cuando sea necesario adaptar una plantilla por licenciamiento o política, crear una copia controlada.
-
----
-
-## 2.8. Licenciamiento de Oracle debe revisarse antes de habilitar todas las métricas
-
-La integración oficial puede utilizar vistas o capacidades asociadas a opciones licenciadas de Oracle.
-
-En el ambiente evaluado no se cuenta con Diagnostics Pack.
-
-Lección:
-
-Antes de producción:
-
-1. Revisar la versión exacta de la plantilla.
-2. Identificar consultas a ASH u otras vistas sujetas a licencia.
-3. Clonar la plantilla.
-4. Deshabilitar en la copia los elementos no autorizados.
-5. Mantener el principio de privilegios mínimos.
-
-No otorgar roles amplios solo para hacer desaparecer errores.
-
----
-
-## 2.9. Los servicios systemd no heredan necesariamente el entorno del usuario
-
-El error `DPI-1047` apareció aunque Oracle Client existía correctamente.
-
-Causa real: `zabbix-agent2` iniciado por `systemd` no recibía `ORACLE_HOME` y `LD_LIBRARY_PATH` del usuario Oracle.
-
-Lección:
-
-Para integraciones que dependan de variables de entorno se debe revisar el entorno efectivo del servicio:
-
-```bash
-systemctl show zabbix-agent2 -p Environment
-```
-
-No asumir que un comando que funciona al usuario `oracle` funcionará igual para un servicio administrado por `systemd`.
-
----
-
-## 2.10. Probar la dependencia directamente antes de culpar a Zabbix
-
-La conexión SQL*Plus directa permitió separar un problema de credenciales de un problema de librerías.
-
-Lección:
-
-Antes de diagnosticar desde Zabbix, probar el componente directamente.
-
-Ejemplos:
-
-```bash
-sqlplus -L usuario@//host:1521/servicio
-curl -I http://host:puerto/
-docker ps
-systemctl status <servicio>
-ss -lntp
-```
-
----
-
-## 2.11. Los umbrales estándar son un punto de partida, no una verdad del ambiente
-
-El caso de REDO mostró que un trigger genérico puede ser incompatible con una configuración concreta.
-
-Lección:
-
-Nunca modificar infraestructura solo para cerrar una alerta sin comprender antes:
-
-- qué mide;
-- unidad;
-- intervalo;
-- fórmula del trigger;
-- arquitectura real;
-- comportamiento histórico.
-
-Primero medir. Después parametrizar.
-
----
-
-## 2.12. La zona horaria afecta la interpretación operativa
-
-Se observó diferencia entre las horas mostradas por las gráficas y la hora local.
-
-Lección:
-
-La zona horaria debe formar parte del checklist inicial del frontend y de los usuarios.
-
-Para el ambiente actual:
-
-```text
-America/Mexico_City
-```
-
----
-
-## 2.13. "Running" en Docker no significa que la aplicación esté sana
-
-Para servidores de aplicaciones con varios contenedores se deben separar tres niveles:
-
-```text
-Servidor Linux
+Host Linux
 Docker Engine
-Aplicación dentro del contenedor
+Contenedor
+Proceso/aplicación/base dentro del contenedor
+Servicio funcional para el usuario
 ```
 
-Lección:
+Para aplicaciones críticas se necesita una comprobación funcional adicional: puerto, HTTP, endpoint, consulta, ping de base, etc.
 
-Monitorear únicamente el estado del contenedor es insuficiente.
+### 2.15. El Agent 2 se instala normalmente en el host, no dentro de cada contenedor
 
-Para cada aplicación importante se debe validar, además:
+Esto permite detectar la caída de un contenedor desde fuera de él y reduce agentes duplicados. Las excepciones deben justificarse explícitamente.
 
-- puerto;
-- HTTP/HTTPS;
-- código de respuesta;
-- tiempo de respuesta;
-- endpoint crítico;
-- proceso o servicio interno cuando aplique.
+### 2.16. Varias instancias en un host requieren dimensionamiento conjunto
 
-El Agent 2 debe instalarse normalmente en el host Linux. No instalar un agente en cada contenedor salvo que exista una necesidad concreta.
+Con varios MongoDB, JVM, bases o servicios pesados en el mismo Linux, no se puede dimensionar cada proceso como si fuera el único consumidor del host. Deben considerarse límites de contenedor, cachés, CPU, I/O y RAM agregada.
 
----
+### 2.17. Los umbrales de fábrica son punto de partida
 
-## 2.14. En servidores Docker se debe revisar acceso al socket antes de aplicar la plantilla
+Antes de modificar un trigger:
 
-Para utilizar `Docker by Zabbix agent 2`, el servicio Agent 2 debe poder consultar Docker.
+- entender la métrica;
+- confirmar unidad e intervalo;
+- revisar expresión;
+- observar comportamiento histórico;
+- validar que la semántica siga vigente en la versión actual del producto.
 
-Antes de configurar el host verificar:
+No modificar infraestructura únicamente para “poner en verde” una alerta genérica.
 
-```bash
-docker version
-docker ps
-ls -l /var/run/docker.sock
-id zabbix
-```
+### 2.18. Una configuración no termina cuando aparecen gráficas
 
-Lección:
+Debe probarse al menos una falla controlada y su recuperación cuando sea seguro hacerlo. El laboratorio MongoDB validó este principio deteniendo el contenedor y comprobando creación/cierre automático del problema.
 
-El problema puede ser de permisos del socket y no de la plantilla.
+### 2.19. Reinicio y persistencia son parte de la aceptación
 
-No ampliar permisos de forma indiscriminada. Documentar qué usuario o grupo obtiene acceso a Docker.
+Antes de considerar listo un servidor o integración comprobar, cuando corresponda:
 
----
+- reinicio del servicio;
+- reinicio del host;
+- persistencia del firewall;
+- persistencia de volúmenes;
+- arranque automático;
+- continuidad del monitoreo.
 
-## 2.15. Los cambios deben ser reproducibles
+### 2.20. Cada solución debe poder reproducirse
 
-Una solución manual no documentada se pierde en la siguiente instalación.
-
-Lección:
-
-Toda corrección debe dejar registrado:
+Toda incidencia debe registrar:
 
 ```text
 Síntoma
+Ambiente
 Causa
-Archivo o componente
+Diagnóstico
 Cambio exacto
-Comando de aplicación
 Validación
-Cómo revertir
+Reversión
 Estado
 ```
 
----
+La memoria del operador no sustituye la documentación.
 
-# 3. Lista preventiva antes de instalar Zabbix Server en Linux
+## 3. Qué documento usar
 
-No comenzar la instalación hasta completar esta revisión.
+| Necesidad | Documento |
+|---|---|
+| Procedimiento paso a paso | `docs/guias/` |
+| Error real encontrado | `docs/base-conocimiento/` |
+| Principio preventivo general | Este archivo |
+| Verificación antes de desplegar | `docs/checklist-preventivo-linux.md` |
+| Estado y secuencia del proyecto | `docs/implementacion-zabbix-docker-oracle.md` |
 
-## Sistema operativo
+## 4. Regla de salida
 
-- [ ] Versión exacta de Oracle Linux/Linux documentada.
-- [ ] Hostname definitivo configurado.
-- [ ] IP fija o reserva definida.
-- [ ] DNS directo y reverso revisado cuando aplique.
-- [ ] Zona horaria correcta.
-- [ ] NTP/chrony sincronizado.
-- [ ] Espacio en disco suficiente.
-- [ ] Filesystem para base de datos dimensionado.
-- [ ] Memoria y CPU dimensionadas.
-- [ ] SELinux en modo conocido y documentado.
-- [ ] `firewalld` activo y bajo control.
-
-Comandos mínimos:
-
-```bash
-cat /etc/os-release
-hostnamectl
-ip addr
-ip route
-timedatectl
-chronyc tracking
-df -h
-free -m
-getenforce
-firewall-cmd --state
-```
-
----
-
-# 4. Lista preventiva de red
-
-Antes de instalar agentes:
-
-- [ ] IP del Zabbix Server confirmada desde cada segmento.
-- [ ] Ruta hacia el servidor confirmada.
-- [ ] `10051/TCP` accesible para comprobaciones activas.
-- [ ] `10050/TCP` accesible para comprobaciones pasivas cuando se utilicen.
-- [ ] No existen NAT o balanceadores desconocidos entre servidor y agente.
-- [ ] Se conoce la IP real de origen de las comprobaciones pasivas.
-- [ ] No se reutilizan puertos alternos sin documentarlos.
-- [ ] Firewall de red y firewall local están alineados.
-
-Pruebas mínimas desde el host monitoreado:
-
-```bash
-ip route get <IP_ZABBIX_SERVER>
-timeout 5 bash -c 'cat < /dev/null > /dev/tcp/<IP_ZABBIX_SERVER>/10051'
-```
-
-Prueba desde Zabbix Server al agente cuando aplique:
-
-```bash
-nc -vz <IP_HOST> 10050
-```
-
----
-
-# 5. Lista preventiva para Agent 2 en Linux
-
-Antes de vincular plantillas:
-
-- [ ] Agent 2 instalado desde repositorio compatible.
-- [ ] Archivo de configuración respaldado.
-- [ ] `Hostname` coincide exactamente con Zabbix.
-- [ ] `ServerActive` utiliza la IP correcta.
-- [ ] `Server=` contiene únicamente orígenes autorizados.
-- [ ] Puerto `10050` escucha cuando se usarán comprobaciones pasivas.
-- [ ] Servicio habilitado al arranque.
-- [ ] Configuración validada antes de reiniciar.
-- [ ] Logs revisados después del reinicio.
-
-Validaciones:
-
-```bash
-zabbix_agent2 -T -c /etc/zabbix/zabbix_agent2.conf
-systemctl enable --now zabbix-agent2
-systemctl is-active zabbix-agent2
-ss -lntp | grep ':10050'
-journalctl -u zabbix-agent2 -n 100 --no-pager
-```
-
----
-
-# 6. Lista preventiva para Oracle Database
-
-Antes de vincular `Oracle by Zabbix agent 2`:
-
-- [ ] Confirmar `SERVICE_NAME`.
-- [ ] Confirmar si la base es CDB o no-CDB.
-- [ ] Confirmar listener.
-- [ ] Crear usuario dedicado de monitoreo.
-- [ ] Revisar privilegios mínimos.
-- [ ] Revisar licenciamiento antes de otorgar accesos.
-- [ ] Probar SQL*Plus directamente con el usuario de monitoreo.
-- [ ] Confirmar arquitectura 64 bits de Oracle Client.
-- [ ] Confirmar `libclntsh.so`.
-- [ ] Revisar entorno efectivo de `zabbix-agent2`.
-- [ ] Vincular plantilla Oracle directamente al host.
-- [ ] Configurar macros como secretos cuando corresponda.
-
-Validaciones mínimas:
-
-```bash
-lsnrctl status
-sqlplus -L <USUARIO>@//127.0.0.1:1521/<SERVICE_NAME>
-find <ORACLE_HOME> -name 'libclntsh.so*'
-systemctl show zabbix-agent2 -p Environment
-```
-
----
-
-# 7. Lista preventiva para servidores de aplicaciones con Docker
-
-Antes de aplicar la plantilla Docker:
-
-- [ ] Identificar sistema operativo del host.
-- [ ] Confirmar versión de Docker Engine.
-- [ ] Obtener inventario con `docker ps -a`.
-- [ ] Identificar nombres de contenedores.
-- [ ] Identificar aplicación asociada a cada contenedor.
-- [ ] Identificar puertos publicados.
-- [ ] Identificar redes Docker.
-- [ ] Identificar volúmenes.
-- [ ] Identificar política de reinicio.
-- [ ] Confirmar acceso de Agent 2 al socket Docker.
-- [ ] Definir qué contenedores deben monitorearse y cuáles excluirse.
-- [ ] Definir validación funcional por aplicación.
-
-Inventario mínimo:
-
-```bash
-docker version
-docker info
-docker ps -a
-docker network ls
-docker volume ls
-```
-
-Para cada aplicación documentar:
+Una integración se considera técnicamente lista solo cuando:
 
 ```text
-Aplicación:
-Contenedor:
-Imagen:
-Puerto interno:
-Puerto publicado:
-URL de salud:
-Endpoint crítico:
-Dependencias:
-Responsable:
+conecta
++ recopila datos
++ no tiene elementos no soportados sin explicación
++ alerta ante una falla relevante
++ recupera correctamente
++ sobrevive al reinicio/persistencia aplicable
++ queda documentada
 ```
-
-No considerar una aplicación saludable solo porque el contenedor esté `running`.
-
----
-
-# 8. Lista preventiva para plantillas
-
-Antes de vincular una plantilla:
-
-- [ ] Confirmar que corresponde a la versión de Zabbix utilizada.
-- [ ] Revisar qué interfaces requiere.
-- [ ] Revisar macros heredadas.
-- [ ] Revisar elementos y reglas de descubrimiento.
-- [ ] Revisar permisos externos necesarios.
-- [ ] Revisar implicaciones de licencia.
-- [ ] No vincular una plantilla de aplicación dentro de una plantilla de sistema operativo sin una razón de diseño explícita.
-- [ ] No modificar una plantilla oficial directamente.
-
-Estructura recomendada:
-
-```text
-Host
-├── Plantilla del sistema operativo
-├── Plantilla de Docker, si aplica
-├── Plantilla de base de datos, si aplica
-└── Plantillas de aplicación específicas
-```
-
----
-
-# 9. Lista preventiva para métricas y triggers
-
-Antes de aceptar una alerta como válida:
-
-- [ ] Identificar la métrica exacta.
-- [ ] Confirmar unidad.
-- [ ] Confirmar frecuencia de captura.
-- [ ] Leer la expresión del trigger.
-- [ ] Identificar macro usada como umbral.
-- [ ] Comparar con la arquitectura real.
-- [ ] Revisar mínimo, promedio, máximo y tendencia.
-- [ ] Correlacionar con otras métricas relacionadas.
-- [ ] No ajustar el sistema únicamente para cerrar una alerta genérica.
-- [ ] Documentar cualquier sobrescritura de macro.
-
----
-
-# 10. Lista preventiva para seguridad
-
-- [ ] No almacenar contraseñas en texto visible en el repositorio.
-- [ ] Usar macros de tipo secreto cuando estén disponibles.
-- [ ] Aplicar privilegio mínimo al usuario `zabbix`.
-- [ ] No configurar `sudo NOPASSWD: ALL`.
-- [ ] No configurar `AllowKey=system.run[*]` sin justificación.
-- [ ] Abrir únicamente puertos necesarios.
-- [ ] Limitar `Server=` a orígenes autorizados.
-- [ ] Evaluar TLS entre servidor, proxy y agentes para producción.
-- [ ] Revisar permisos del socket Docker antes de agregar usuarios a grupos privilegiados.
-- [ ] Mantener SELinux habilitado y resolver políticas correctamente.
-
----
-
-# 11. Orden de validación recomendado para cada nuevo host Linux
-
-Seguir siempre este orden:
-
-```text
-1. Inventario del servidor
-2. Red y rutas
-3. Firewall
-4. Instalación Agent 2
-5. Configuración Agent 2
-6. Prueba activa
-7. Prueba pasiva si aplica
-8. Vinculación de plantilla del SO
-9. Plantilla de Docker / Oracle / aplicación
-10. Dependencias externas
-11. Últimos datos
-12. Problemas
-13. Gráficas
-14. Umbrales
-15. Evidencia y documentación
-```
-
-No cambiar simultáneamente varias capas. Si una prueba falla, resolverla antes de continuar.
-
----
-
-# 12. Criterios de aceptación para la futura plataforma Linux
-
-La migración a una plataforma Linux no debe considerarse concluida solo porque la interfaz web abra.
-
-Debe comprobarse:
-
-- [ ] Zabbix Server inicia automáticamente después de reiniciar Linux.
-- [ ] Base de datos inicia automáticamente.
-- [ ] Frontend inicia automáticamente.
-- [ ] Agent 2 inicia automáticamente.
-- [ ] Zona horaria y sincronización son correctas.
-- [ ] `10051/TCP` está disponible desde redes autorizadas.
-- [ ] `10050/TCP` se abre únicamente cuando sea necesario.
-- [ ] Firewall persiste después de reinicio.
-- [ ] SELinux permanece habilitado.
-- [ ] Se monitorea el propio Zabbix Server.
-- [ ] Existe respaldo de base de datos y configuración.
-- [ ] Existe procedimiento de restauración.
-- [ ] Existe procedimiento de actualización.
-- [ ] Existen credenciales no predeterminadas.
-- [ ] Se han probado al menos un host Linux, un Oracle Database y un servidor Docker.
-- [ ] Se documentaron puertos, IP, nombres, plantillas y responsables.
-
----
-
-# 13. Principio operativo para las siguientes pruebas
-
-A partir de este punto, cada nueva integración debe seguir esta regla:
-
-```text
-Primero validar infraestructura.
-Después validar agente.
-Después validar integración.
-Después interpretar la métrica.
-Finalmente parametrizar la alerta.
-```
-
-Esto evita intentar corregir Zabbix cuando el problema real está en red, permisos, sistema operativo, base de datos, Docker o la propia aplicación.
