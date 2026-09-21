@@ -12,6 +12,7 @@ La guía de instalación principal describe el procedimiento normal. Esta base d
 | [Zabbix en Docker Compose](zabbix-docker.md) | Imágenes incorrectas, secretos CRLF, MySQL y puertos de Zabbix Server |
 | [Agentes Zabbix](agentes-zabbix.md) | Agent 2 en Windows y Oracle Linux, comprobaciones activas y pasivas |
 | [Monitoreo de Oracle](oracle.md) | Plantilla Oracle, interfaz, `SERVICE_NAME`, macros y estado pendiente |
+| [MongoDB Docker: lecciones y prevención Linux](mongodb-docker-lecciones-linux.md) | Laboratorio MongoDB 8.x, incompatibilidades de plantilla, WiredTiger, checklist preventivo y diseño objetivo multi-Mongo en Linux |
 
 ## Forma de documentar nuevas incidencias
 
