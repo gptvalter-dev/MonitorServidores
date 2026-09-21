@@ -1,39 +1,62 @@
 # Base de conocimiento de monitoreo
 
-Esta sección concentra las incidencias, diagnósticos y soluciones encontradas durante la implementación de Zabbix.
+Esta carpeta conserva **incidencias reales** encontradas durante la implementación: síntoma, causa, diagnóstico, solución, validación y estado.
 
-La guía de instalación principal describe el procedimiento normal. Esta base de conocimiento se utiliza cuando aparece un error o un comportamiento inesperado.
+No debe duplicar los procedimientos normales de `docs/guias/` ni el checklist preventivo general.
 
-## Índice de consulta
+## Índice
 
 | Categoría | Contenido |
 |---|---|
-| [Docker Desktop y Windows](docker-windows.md) | Virtualización, WSL 2, rangos reservados y motor Linux de Docker |
-| [Zabbix en Docker Compose](zabbix-docker.md) | Imágenes incorrectas, secretos CRLF, MySQL y puertos de Zabbix Server |
-| [Agentes Zabbix](agentes-zabbix.md) | Agent 2 en Windows y Oracle Linux, comprobaciones activas y pasivas |
-| [Monitoreo de Oracle](oracle.md) | Plantilla Oracle, interfaz, `SERVICE_NAME`, macros y estado pendiente |
-| [MongoDB Docker: lecciones y prevención Linux](mongodb-docker-lecciones-linux.md) | Laboratorio MongoDB 8.x, incompatibilidades de plantilla, WiredTiger, checklist preventivo y diseño objetivo multi-Mongo en Linux |
+| [Docker Desktop y Windows](docker-windows.md) | WSL/virtualización, motor Linux y comunicación contenedor ↔ host del laboratorio |
+| [Zabbix en Docker Compose](zabbix-docker.md) | Imágenes, secretos CRLF, MySQL y publicación de puertos |
+| [Zabbix Agent 2](agentes-zabbix.md) | Arranque, checks activos/pasivos, autorización y plugins que bloquean el agente |
+| [Oracle Database](oracle.md) | Plantillas, interfaz, `SERVICE_NAME`, privilegios, Oracle Client y métricas |
+| [MongoDB Docker](mongodb-docker-lecciones-linux.md) | Permisos, LLD, compatibilidad MongoDB 8.x, WiredTiger y multi-instancia |
 
-## Forma de documentar nuevas incidencias
+## Dónde documentar cada cosa
 
-Cada incidencia debe contener:
+```text
+docs/guias/
+  Procedimiento normal reproducible.
 
-1. Síntoma o mensaje de error.
+docs/base-conocimiento/
+  Incidencias reales y su resolución.
+
+docs/lecciones-aprendidas-y-prevencion-linux.md
+  Principios preventivos transversales.
+
+docs/checklist-preventivo-linux.md
+  Controles ejecutables antes de desplegar/integrar.
+```
+
+## Formato de una incidencia
+
+1. Síntoma o error.
 2. Ambiente afectado.
 3. Causa identificada.
-4. Diagnóstico realizado.
-5. Solución aplicada.
-6. Validación posterior.
-7. Estado: resuelta, pendiente o solución temporal.
+4. Diagnóstico.
+5. Solución.
+6. Validación.
+7. Estado: resuelta, pendiente o workaround.
 
 ## Seguridad
 
-No publicar en esta carpeta:
+Este repositorio es público. No publicar:
 
-- Contraseñas.
-- Direcciones IP internas reales.
-- Nombres reales de servidores productivos.
-- Usuarios funcionales de aplicaciones.
-- Cadenas de conexión completas con credenciales.
+- contraseñas;
+- IP internas reales;
+- nombres reales de servidores productivos;
+- usuarios funcionales de aplicaciones;
+- cadenas de conexión con credenciales;
+- tokens o secretos.
 
-Utilizar variables como `<IP_ZABBIX_SERVER>`, `<HOSTNAME_LINUX>` y `<ORACLE_SERVICE>`.
+Usar placeholders como:
+
+```text
+<IP_ZABBIX_SERVER>
+<IP_HOST>
+<HOSTNAME_LINUX>
+<MONGODB_PASSWORD>
+<ORACLE_SERVICE>
+```
