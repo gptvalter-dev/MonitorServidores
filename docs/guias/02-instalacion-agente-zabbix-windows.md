@@ -1,64 +1,59 @@
 # Instalación de Zabbix Agent 2 en Windows
 
-> Alcance: esta guía instala y configura únicamente Zabbix Agent 2 en Windows. El Zabbix Server debe estar funcionando antes de comenzar.
+> Alcance: procedimiento normal para instalar/configurar Zabbix Agent 2 en Windows. Incidencias reales: [Agentes Zabbix](../base-conocimiento/agentes-zabbix.md).
 
-## 1. Objetivo
+## 1. Resultado esperado
 
-Al finalizar:
+- Servicio `Zabbix Agent 2` instalado y `Running`.
+- Checks activos funcionales.
+- Checks pasivos disponibles si alguna integración los necesita.
+- `Zabbix agent ping = Up (1)`.
 
-- El servicio **Zabbix Agent 2** estará instalado y activo.
-- El agente podrá enviar comprobaciones activas al Zabbix Server.
-- El host Windows aparecerá con métricas recientes en Zabbix.
-
-## 2. Datos que se deben conocer
-
-Antes de instalar, definir:
+## 2. Datos requeridos
 
 ```text
-<HOSTNAME_WINDOWS>       Nombre técnico que tendrá el host en Zabbix
-<IP_ZABBIX_SERVER>       Dirección accesible del Zabbix Server
-<PUERTO_ZABBIX_SERVER>   Puerto publicado del Zabbix Server; en el laboratorio es 11051
-<PUERTO_AGENTE_WINDOWS>  Puerto donde escuchará el agente; en el laboratorio es 11050
+<HOSTNAME_WINDOWS>        Nombre técnico exacto en Zabbix
+<IP_O_DNS_ZABBIX_SERVER>  Dirección accesible del Zabbix Server
+<PUERTO_ZABBIX_SERVER>    Normalmente 10051
+<PUERTO_AGENT>            Normalmente 10050
+<ORIGEN_CHECK_PASIVO>     Server/Proxy autorizado para consultar Agent 2
 ```
 
-Para comprobaciones activas, `Hostname` debe coincidir exactamente con el campo **Nombre del equipo** en Zabbix, incluyendo mayúsculas, minúsculas y guiones.
+> En el laboratorio Windows se usaron puertos alternos porque los predeterminados estaban ocupados/reservados. No reutilizarlos en otros entornos sin verificar primero.
 
-## 3. Descargar e instalar Agent 2
+## 3. Revisar si ya existe Agent 2
 
-1. Descargar el instalador MSI de Zabbix Agent 2 para Windows desde el sitio oficial de Zabbix.
-2. Ejecutar el MSI como administrador.
-3. Completar el asistente.
-4. Mantener la ruta predeterminada cuando no exista una política distinta.
+Abrir PowerShell como administrador:
 
-Ruta habitual de instalación:
+```powershell
+Get-Service *zabbix* -ErrorAction SilentlyContinue
+```
+
+Si existe, confirmar versión antes de instalar otra copia:
+
+```powershell
+& "C:\Program Files\Zabbix Agent 2\zabbix_agent2.exe" -V
+```
+
+## 4. Instalar Agent 2
+
+1. Descargar el MSI oficial de la misma rama compatible con el Zabbix Server.
+2. Ejecutarlo como administrador.
+3. Mantener la ruta estándar cuando no exista una política diferente.
+
+Ruta habitual:
 
 ```text
 C:\Program Files\Zabbix Agent 2
 ```
 
-## 4. Localizar el archivo de configuración
-
-El archivo principal normalmente se encuentra en:
+Configuración:
 
 ```text
 C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf
 ```
 
-Abrir PowerShell como administrador y comprobarlo:
-
-```powershell
-Test-Path "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf"
-```
-
-Resultado esperado:
-
-```text
-True
-```
-
-## 5. Crear un respaldo
-
-Ejecutar:
+## 5. Respaldar configuración
 
 ```powershell
 Copy-Item `
@@ -66,68 +61,42 @@ Copy-Item `
   "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf.respaldo"
 ```
 
-Confirmar:
+## 6. Configuración base
 
-```powershell
-Get-ChildItem "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf*"
-```
-
-## 6. Abrir el archivo como administrador
-
-Desde PowerShell abierto como administrador:
+Abrir:
 
 ```powershell
 notepad "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf"
 ```
 
-Si el archivo se abre pero no permite guardar, cerrar Bloc de notas, volver a abrir PowerShell como administrador y repetir el comando.
-
-## 7. Configurar el agente
-
-Buscar con `Ctrl + F` y configurar:
+Si se usarán checks activos y pasivos:
 
 ```ini
 Hostname=<HOSTNAME_WINDOWS>
-Server=<IP_ZABBIX_SERVER>
-ServerActive=<IP_ZABBIX_SERVER>:<PUERTO_ZABBIX_SERVER>
-ListenPort=<PUERTO_AGENTE_WINDOWS>
+Server=<ORIGEN_CHECK_PASIVO>
+ServerActive=<IP_O_DNS_ZABBIX_SERVER>:<PUERTO_ZABBIX_SERVER>
+ListenPort=<PUERTO_AGENT>
 ```
 
-Ejemplo de laboratorio:
-
-```ini
-Hostname=<HOSTNAME_WINDOWS>
-Server=127.0.0.1
-ServerActive=127.0.0.1:11051
-ListenPort=11050
-```
-
-### Qué hace cada parámetro
+Qué controla cada parámetro:
 
 | Parámetro | Función |
 |---|---|
-| `Hostname` | Identificador usado por las comprobaciones activas |
-| `Server` | Direcciones autorizadas para consultas pasivas |
-| `ServerActive` | Dirección y puerto a los que el agente enviará datos activos |
-| `ListenPort` | Puerto local de consultas pasivas |
+| `Hostname` | Identidad usada por checks activos |
+| `Server` | Orígenes autorizados para checks pasivos |
+| `ServerActive` | Destino de checks activos |
+| `ListenPort` | Puerto local de checks pasivos |
 
-No dejar dos líneas activas para el mismo parámetro. Las líneas comentadas comienzan con `#` y no se aplican.
+No dejar líneas activas duplicadas.
 
-## 8. Guardar y validar el archivo
-
-En Bloc de notas seleccionar **Archivo → Guardar** y cerrar.
-
-Comprobar las líneas activas:
+## 7. Validar antes de reiniciar
 
 ```powershell
-Select-String `
-  -Path "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf" `
-  -Pattern '^(Hostname|Server|ServerActive|ListenPort)='
+Get-Content "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf" |
+Select-String '^Server=|^ServerActive=|^Hostname=|^ListenPort='
 ```
 
-## 9. Validar la configuración antes de reiniciar
-
-Ejecutar:
+Luego:
 
 ```powershell
 & "C:\Program Files\Zabbix Agent 2\zabbix_agent2.exe" `
@@ -135,130 +104,65 @@ Ejecutar:
   -T
 ```
 
-Resultado esperado: validación correcta sin errores de sintaxis.
+No reiniciar si la validación falla. Un plugin externo también puede impedir el arranque aunque el archivo principal sea correcto; revisar el mensaje completo.
 
-Si aparece un error, no reiniciar todavía. Corregir la línea y repetir la prueba.
-
-## 10. Iniciar o reiniciar el servicio
-
-Comprobar si existe:
-
-```powershell
-Get-Service "Zabbix Agent 2"
-```
-
-Reiniciar:
+## 8. Reiniciar y validar servicio
 
 ```powershell
 Restart-Service "Zabbix Agent 2"
-```
-
-Si está detenido:
-
-```powershell
-Start-Service "Zabbix Agent 2"
-```
-
-Confirmar:
-
-```powershell
 Get-Service "Zabbix Agent 2"
 ```
 
 Resultado esperado:
 
 ```text
-Status : Running
+Running
 ```
 
-## 11. Comprobar el puerto local
-
-Ejecutar:
+Cuando se usen checks pasivos, confirmar listener:
 
 ```powershell
 Get-NetTCPConnection -State Listen |
-Where-Object LocalPort -eq <PUERTO_AGENTE_WINDOWS>
+Where-Object LocalPort -eq <PUERTO_AGENT>
 ```
 
-En el laboratorio:
+## 9. Crear o validar el host en Zabbix
 
-```powershell
-Get-NetTCPConnection -State Listen |
-Where-Object LocalPort -eq 11050
-```
-
-Si no aparece, revisar el servicio y `ListenPort`.
-
-## 12. Crear el host en Zabbix
-
-En la interfaz web:
+Ruta:
 
 ```text
-Recopilación de datos → Equipos → Crear equipo
+Recopilación de datos → Equipos
 ```
 
-Configurar:
+Para monitoreo de Windows por checks activos:
 
 ```text
 Nombre del equipo: <HOSTNAME_WINDOWS>
-Nombre visible: descripción amigable opcional
-Grupo: Windows servers
 Plantilla: Windows by Zabbix agent active
 Estado: Habilitado
 ```
 
-Para una plantilla activa no es obligatorio crear una interfaz de agente.
+Una plantilla exclusivamente activa no necesita interfaz Agent para esas métricas. **Si después se vincula una integración pasiva, como MongoDB mediante Agent 2, se debe agregar una interfaz Agent alcanzable desde Zabbix Server/Proxy.**
 
-El campo **Nombre del equipo** debe coincidir exactamente con `Hostname=`.
+## 10. Validar datos
 
-## 13. Validar datos en Zabbix
-
-Esperar algunos minutos y abrir:
+En:
 
 ```text
 Monitoreo → Últimos datos
 ```
 
-Filtrar por el host Windows y buscar:
+confirmar:
 
 ```text
-Zabbix agent ping
+Zabbix agent ping = Up (1)
 ```
 
-Resultado esperado:
+También deben aparecer CPU, memoria, disco, red y servicios.
 
-```text
-Up (1)
-```
+## 11. Logs
 
-También deben comenzar a aparecer métricas de CPU, memoria, disco, red y servicios.
-
-## 14. Incidencia: el puerto 10050 está ocupado
-
-Síntoma:
-
-```text
-cannot start server listener
-Listen failed: listen tcp 0.0.0.0:10050
-```
-
-Validar quién utiliza el puerto:
-
-```powershell
-Get-NetTCPConnection -LocalPort 10050 -ErrorAction SilentlyContinue
-```
-
-En el laboratorio se decidió utilizar:
-
-```ini
-ListenPort=11050
-```
-
-Después se validó la configuración y se reinició el servicio.
-
-## 15. Revisar registros
-
-La ubicación exacta del log depende de la configuración del agente. Buscar el parámetro:
+Localizar la ruta configurada:
 
 ```powershell
 Select-String `
@@ -266,28 +170,14 @@ Select-String `
   -Pattern '^LogFile='
 ```
 
-Abrir las últimas líneas del archivo indicado:
+Leer últimas líneas:
 
 ```powershell
-Get-Content "<RUTA_LOG>" -Tail 50
+Get-Content "<RUTA_LOG>" -Tail 100
 ```
 
-## 16. Checklist
+## 12. Referencias
 
-- [ ] MSI de Agent 2 instalado.
-- [ ] Archivo de configuración localizado.
-- [ ] Respaldo creado.
-- [ ] `Hostname` coincide con Zabbix.
-- [ ] `ServerActive` apunta a un puerto accesible.
-- [ ] `ListenPort` no está ocupado.
-- [ ] Validación `-T` correcta.
-- [ ] Servicio `Running`.
-- [ ] Host creado con plantilla activa.
-- [ ] `Zabbix agent ping = Up (1)`.
-- [ ] Métricas recientes visibles.
-
-## 17. Referencias
-
-- [Zabbix agent en Microsoft Windows](https://www.zabbix.com/documentation/7.4/en/manual/appendix/install/windows_agent)
-- [Configuración de Zabbix Agent 2](https://www.zabbix.com/documentation/7.4/en/manual/appendix/config/zabbix_agent2)
-- [Incidencias de agentes](../base-conocimiento/agentes-zabbix.md)
+- Zabbix Agent 2 Windows: https://www.zabbix.com/documentation/7.4/en/manual/appendix/install/windows_agent
+- Agent 2 configuration: https://www.zabbix.com/documentation/7.4/en/manual/appendix/config/zabbix_agent2
+- Incidencias: [Agentes Zabbix](../base-conocimiento/agentes-zabbix.md)
