@@ -1,155 +1,77 @@
 # Monitoreo de Servidores
 
-Guía inicial para reunir la información necesaria antes de seleccionar una herramienta de monitoreo.
+Repositorio de documentación para implementar y operar **Zabbix 7.4** como plataforma de monitoreo de servidores, Docker y bases de datos.
 
-## Objetivo
+## Objetivo actual
 
-Elegir el software más adecuado para monitorear principalmente los **servidores productivos Linux**, las aplicaciones desplegadas en **Docker y Tomcat**, y las bases de datos **Oracle y MongoDB**.
+La herramienta seleccionada es **Zabbix**. El laboratorio inicial en Windows + Docker Desktop permitió validar conceptos, conectividad, Agent 2, Oracle y MongoDB; la arquitectura objetivo debe quedar principalmente sobre **Linux/Oracle Linux**.
 
-> En esta etapa todavía no se elige una herramienta. Primero se recopila la información del entorno y después se comparan las opciones.
+```text
+Zabbix Server Linux
+├── Base de datos de Zabbix
+├── Zabbix Server
+├── Frontend
+└── Agent 2
 
----
+Servidores monitoreados
+├── Linux / Oracle Linux
+├── Oracle Database
+└── Linux + Docker
+    ├── aplicaciones
+    └── uno o varios MongoDB
+```
 
-## Paso 1. Conocer el entorno productivo
+## Estado resumido
 
-Solicitar la cantidad actual de:
+| Componente | Estado |
+|---|---|
+| Zabbix Server 7.4 en laboratorio Windows/Docker | Operativo |
+| Agent 2 Windows | Operativo |
+| Agent 2 Oracle Linux | Operativo |
+| Oracle Database mediante Agent 2 | Funcional; revisión de métricas/licenciamiento pendiente |
+| MongoDB 8.2.x en Docker mediante Agent 2 | Funcional en laboratorio |
+| Caída y recuperación de MongoDB | Validada |
+| Adaptaciones de plantilla MongoDB 8.x | En revisión |
+| Zabbix Server definitivo sobre Linux | Pendiente de ejecución completa |
+| Linux con múltiples contenedores MongoDB | Próxima etapa de diseño/implementación |
 
-- Servidores Linux productivos.
-- Contenedores Docker.
-- Instancias de Tomcat.
-- Bases de datos Oracle.
-- Servidores o nodos MongoDB.
+## Organización de la documentación
 
-También confirmar cómo se administran los contenedores:
+- [Índice de implementación](docs/implementacion-zabbix-docker-oracle.md): punto de entrada y estado del proyecto.
+- [Guías](docs/guias/): procedimientos normales reproducibles.
+- [Base de conocimiento](docs/base-conocimiento/README.md): incidencias reales, causa, solución y validación.
+- [Lecciones aprendidas](docs/lecciones-aprendidas-y-prevencion-linux.md): principios preventivos transversales.
+- [Checklist preventivo Linux](docs/checklist-preventivo-linux.md): revisión previa obligatoria antes de desplegar o integrar un host.
+- [Comparativo Zabbix vs. Prometheus](docs/comparativo-zabbix-prometheus.md): análisis histórico de selección de herramienta.
 
-- Docker Compose.
-- Docker Swarm.
-- Kubernetes.
-- Ejecución manual.
+## Principio operativo
 
-### Resultado esperado
+```text
+1. Validar sistema operativo y red.
+2. Validar Agent 2.
+3. Validar la dependencia (Docker, Oracle, MongoDB, HTTP, etc.).
+4. Validar la plantilla y sus macros.
+5. Confirmar datos reales.
+6. Revisar elementos no soportados.
+7. Parametrizar alertas.
+8. Probar una falla controlada y su recuperación.
+9. Documentar el resultado.
+```
 
-| Componente | Cantidad | Observaciones |
-|---|---:|---|
-| Servidores Linux | Pendiente | Solo producción inicialmente |
-| Contenedores Docker | Pendiente | Identificar aplicación de cada uno |
-| Instancias Tomcat | Pendiente | Confirmar si están dentro de Docker |
-| Bases Oracle | Pendiente | Confirmar versión y edición |
-| Nodos MongoDB | Pendiente | Confirmar si existe Replica Set |
+## Seguridad documental
 
----
+Este repositorio es público. No publicar contraseñas, IP internas reales, nombres productivos, tokens ni cadenas de conexión con credenciales. Utilizar marcadores como:
 
-## Paso 2. Confirmar qué se necesita monitorear
+```text
+<IP_ZABBIX_SERVER>
+<HOSTNAME_LINUX>
+<MONGODB_USER>
+<MONGODB_PASSWORD>
+<ORACLE_SERVICE>
+```
 
-### Linux
+## Próximo trabajo
 
-- CPU, memoria, disco y red.
-- Procesos y servicios.
-
-### Docker
-
-- Contenedores activos y detenidos.
-- Reinicios, consumo de recursos y health checks.
-- Errores y eventos `OOMKilled`.
-
-### Tomcat y Java
-
-- Disponibilidad de Tomcat.
-- Heap, Garbage Collector y threads.
-- Errores de aplicación.
-
-### Aplicaciones y APIs
-
-- Disponibilidad y tiempo de respuesta.
-- Errores HTTP `4xx` y `5xx`.
-- Rendimiento de APIs y vencimiento de certificados.
-
-### Oracle
-
-- Disponibilidad de instancia y listener.
-- Sesiones, conexiones, tablespaces y bloqueos.
-- Uso de CPU y memoria del servidor.
-
-### MongoDB
-
-- Disponibilidad, operaciones y memoria.
-- Consultas, índices y estado del Replica Set.
-
----
-
-## Paso 3. Identificar restricciones técnicas
-
-Confirmar:
-
-- Si se permite instalar agentes en Linux.
-- Si se permite consultar Docker y su socket.
-- Si se puede habilitar JMX en Tomcat.
-- Si se pueden crear usuarios de solo lectura en Oracle y MongoDB.
-- Si el monitoreo debe ser local, interno o puede utilizar nube.
-- Qué puertos y comunicaciones están permitidos.
-
----
-
-## Paso 4. Definir la operación
-
-Acordar:
-
-- Responsables de administración y atención de alertas.
-- Cobertura `24x7`.
-- Medios de notificación.
-- Retención de métricas.
-- Usuarios de dashboards.
-- Ventanas de mantenimiento.
-
----
-
-## Paso 5. Definir recursos
-
-La solución inicial será **open source y autoadministrada**. Se debe determinar:
-
-- Infraestructura disponible.
-- CPU, memoria y almacenamiento.
-- Retención, respaldos y recuperación.
-- Personal responsable.
-- Capacitación y soporte opcional.
-
-> El software puede no tener costo de licencia, pero requiere infraestructura, mantenimiento y tiempo operativo.
-
----
-
-## Paso 6. Estimar crecimiento
-
-- Servidores esperados en uno o dos años.
-- Crecimiento de contenedores y aplicaciones.
-- Posible adopción de Kubernetes.
-- Necesidad futura de APM, logs y trazas.
-- Nuevas sedes o ambientes.
-
----
-
-## Información mínima para comparar herramientas
-
-- [ ] Cantidad de servidores, contenedores, Tomcat y bases de datos.
-- [ ] Método de despliegue de contenedores.
-- [ ] Alcance exacto del monitoreo.
-- [ ] Restricciones de agentes, accesos y red.
-- [ ] Responsables y medios de alerta.
-- [ ] Retención requerida.
-- [ ] Recursos disponibles.
-- [ ] Crecimiento esperado.
-
----
-
-## Documentación
-
-- [Comparativo: Zabbix vs. Prometheus](docs/comparativo-zabbix-prometheus.md)
-- [Implementación de Zabbix con Docker, Windows y Oracle Linux](docs/implementacion-zabbix-docker-oracle.md)
-- [Base de conocimiento de incidencias](docs/base-conocimiento/README.md)
-
-## Estado actual
-
-Zabbix 7.4 funciona en Docker y ya monitorea Windows y Oracle Linux. La conexión con Oracle Database sigue pendiente.
-
-## Siguiente paso
-
-Crear el usuario de monitoreo Oracle, configurar las macros del host y validar `oracle.ping`.
+1. Cerrar la validación pendiente de la métrica MongoDB 8.x `WiredTiger cache: pages evicted by application threads, rate`.
+2. Diseñar y probar el escenario definitivo **Linux + Docker Engine + múltiples contenedores MongoDB + un Agent 2 en el host**.
+3. Ejecutar la instalación del Zabbix Server definitivo sobre Linux siguiendo el checklist preventivo.
