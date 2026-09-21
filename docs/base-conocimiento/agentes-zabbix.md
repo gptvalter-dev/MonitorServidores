@@ -1,6 +1,10 @@
-# Incidencias: agentes Zabbix
+# Incidencias: Zabbix Agent 2
 
-## 1. Zabbix Agent 2 de Windows no inicia
+Este archivo conserva únicamente incidencias específicas del agente. Los controles preventivos generales están en [Checklist preventivo Linux](../checklist-preventivo-linux.md).
+
+> Seguridad: se sustituyeron IPs y hostnames reales del laboratorio por placeholders.
+
+## 1. Agent 2 en Windows no inicia por puerto reservado
 
 **Síntoma**
 
@@ -9,13 +13,11 @@ cannot start server listener
 Listen failed: listen tcp 0.0.0.0:10050
 ```
 
-**Causa identificada**
+**Causa**
 
-El puerto `10050` estaba reservado por Windows y la línea modificada permanecía comentada.
+El puerto predeterminado estaba reservado/ocupado en Windows.
 
-**Solución**
-
-Configurar en `C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf`:
+**Solución del laboratorio**
 
 ```ini
 ListenPort=11050
@@ -27,11 +29,14 @@ Validar e iniciar:
 & "C:\Program Files\Zabbix Agent 2\zabbix_agent2.exe" `
   -c "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf" `
   -T
+
 Start-Service "Zabbix Agent 2"
 Get-Service "Zabbix Agent 2"
 ```
 
 **Estado:** resuelta.
+
+> En Linux objetivo se debe preferir `10050` cuando no exista conflicto; no copiar `11050` por costumbre.
 
 ---
 
@@ -39,13 +44,13 @@ Get-Service "Zabbix Agent 2"
 
 **Ambiente**
 
-- Oracle Linux 8.10.
-- Binario manual en `/opt/zabbix/sbin/zabbix_agentd`.
-- Zabbix Agent 7.4.x enlazado estáticamente.
+- Oracle Linux 8.x.
+- Binario manual bajo `/opt/zabbix`.
+- Agente clásico enlazado estáticamente.
 
 **Síntoma**
 
-El binario mostraba la versión y validaba la configuración, pero al iniciar terminaba con:
+El binario mostraba versión y validaba configuración, pero al iniciar terminaba con:
 
 ```text
 Segmentation fault (core dumped)
@@ -53,7 +58,9 @@ Segmentation fault (core dumped)
 
 **Solución aplicada**
 
-Se sustituyó el binario manual por Zabbix Agent 2 desde el repositorio oficial:
+Se sustituyó la instalación manual por **Zabbix Agent 2 desde el repositorio oficial compatible**.
+
+Ejemplo para la rama 7.4 en Oracle Linux 8:
 
 ```bash
 rpm -Uvh https://repo.zabbix.com/zabbix/7.4/release/oracle/8/noarch/zabbix-release-latest-7.4.el8.noarch.rpm
@@ -66,180 +73,133 @@ dnf install -y zabbix-agent2
 
 ---
 
-## 3. Comprobaciones activas sin datos
+## 3. Checks activos sin datos
 
-**Síntoma en Zabbix**
-
-```text
-Linux: Zabbix agent is not available (or no data for 30m)
-Comprobación activa: Desconocido
-```
-
-**Errores en Agent 2**
+**Síntomas**
 
 ```text
-cannot connect to [192.20.0.10:11051]: i/o timeout
-cannot connect to [192.20.0.10:11051]: no route to host
-active check configuration update from host [ZAM-SV-073-19C] started to fail
+Zabbix agent is not available (or no data for 30m)
+cannot connect to [<IP_ZABBIX_SERVER>:<PUERTO_ZABBIX_SERVER>]
+no route to host
 ```
 
-**Diagnóstico de conectividad**
+**Causa encontrada**
 
-Desde Oracle Linux se probaron ambas direcciones:
+`ServerActive` apuntaba a una dirección del servidor que no era alcanzable desde el host monitoreado. Otra dirección/interfaz sí lo era.
 
-```text
-192.20.0.10:11051 -> SIN CONEXION
-192.20.0.12:11051 -> CONEXION OK
-```
-
-**Causa identificada**
-
-La directiva `ServerActive` apuntaba a `192.20.0.10:11051`, pero el Zabbix Server publicado en Docker era accesible desde Oracle Linux mediante `192.20.0.12:11051`.
-
-El `Hostname` ya coincidía con el nombre técnico del host y la plantilla `Linux by Zabbix agent active` estaba vinculada directamente.
-
-**Corrección aplicada**
+**Corrección**
 
 ```ini
-ServerActive=192.20.0.12:11051
-Hostname=ZAM-SV-073-19C
+ServerActive=<IP_ZABBIX_SERVER_ALCANZABLE>:<PUERTO_ZABBIX_SERVER>
+Hostname=<HOSTNAME_ZABBIX>
 ```
 
-Después se reinició el servicio:
-
 ```bash
+sudo zabbix_agent2 -T -c /etc/zabbix/zabbix_agent2.conf
 sudo systemctl restart zabbix-agent2
 sudo systemctl is-active zabbix-agent2
 ```
 
-Se confirmó que, después del reinicio, no aparecieron nuevos mensajes de:
+**Validación**
 
-```text
-cannot connect
-no route to host
-active check configuration update ... started to fail
-```
-
-La configuración efectiva quedó validada con:
-
-```bash
-sudo grep -E '^(ServerActive|Hostname)=' \
-  /etc/zabbix/zabbix_agent2.conf
-```
-
-Resultado:
-
-```text
-ServerActive=192.20.0.12:11051
-Hostname=ZAM-SV-073-19C
-```
-
-**Validación en Zabbix**
-
-En **Monitoreo → Últimos datos** se confirmó:
-
-```text
-Zabbix agent ping
-Último valor: Up (1)
-Antigüedad de la comprobación: 52 segundos
-```
-
-La métrica Oracle `Ping` permaneció también en `Up (1)`, confirmando que las comprobaciones activas de Linux y las pasivas de Oracle funcionan simultáneamente.
+`Zabbix agent ping` debe tener valor reciente `Up (1)`.
 
 **Estado:** resuelta.
 
 ---
 
-## 4. Interfaz pasiva en timeout y rechazo por permisos
+## 4. Check pasivo: timeout y después rechazo por permisos
 
 **Síntomas**
 
-Primero Zabbix mostró:
+Primero:
 
 ```text
-Get value from agent failed: cannot establish TCP connection to
-[192.0.0.73:10050]: timed out
+cannot establish TCP connection to [<IP_HOST>:10050]: timed out
 ```
 
-Después de abrir el puerto, mostró:
+Después de resolver red/firewall:
 
 ```text
-Received empty response from Zabbix Agent at [192.0.0.73].
+Received empty response from Zabbix Agent...
 Assuming that agent dropped connection because of access permissions.
 ```
 
-### Diagnóstico de red
+**Diagnóstico**
 
-Agent 2 escuchaba correctamente en el puerto `10050`:
+1. Confirmar listener:
 
 ```bash
 sudo ss -lntp | grep ':10050'
 ```
 
-La regla existente autorizaba únicamente:
+2. Identificar el origen real de la conexión:
 
-```text
-192.20.0.10/32 -> 10050/tcp
+```bash
+sudo tcpdump -nni any tcp port 10050
 ```
 
-La conexión real llegaba desde:
-
-```text
-192.20.0.12
-```
-
-Esto se confirmó con `Test-NetConnection` y `tcpdump`.
-
-### Corrección de autorización en Agent 2
-
-Se configuró:
+3. Autorizar únicamente ese origen en Agent 2:
 
 ```ini
-Server=192.20.0.10,192.20.0.12
-Hostname=ZAM-SV-073-19C
+Server=<IP_ZABBIX_SERVER_O_PROXY_AUTORIZADO>
 ```
 
-Después se reinició el servicio:
+4. Crear regla permanente de firewall para el mismo origen.
 
-```bash
-sudo systemctl restart zabbix-agent2
-sudo systemctl is-active zabbix-agent2
-```
+**Validación**
 
-Resultado:
+- interfaz Agent disponible;
+- `zabbix_get` responde cuando aplique;
+- `Zabbix agent ping = Up (1)`;
+- regla persiste después de `firewall-cmd --reload`.
+
+**Estado:** resuelta.
+
+---
+
+## 5. Un plugin externo impide iniciar todo Agent 2
+
+**Ambiente del laboratorio:** Windows, Agent 2 7.4.12.
+
+**Síntoma**
+
+Después de instalar plugins y modificar MongoDB, el servicio Agent 2 dejó de iniciar. La primera sospecha fue la configuración MongoDB.
+
+La validación mostró:
 
 ```text
-active
+ERROR: Cannot register plugins: failed to register metrics of plugin "NVIDIA"
+... zabbix-agent2-plugin-nvidia-gpu.exe ... is not a valid Win32 application
 ```
 
-### Regla permanente de `firewalld`
+**Diagnóstico correcto**
 
-Después de validar `oracle.ping = Up (1)`, se hizo permanente la autorización para el origen real:
-
-```bash
-sudo firewall-cmd --permanent --zone=public \
-  --add-rich-rule='rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept'
-
-sudo firewall-cmd --reload
-sudo firewall-cmd --zone=public --list-rich-rules
+```powershell
+& "C:\Program Files\Zabbix Agent 2\zabbix_agent2.exe" `
+  -c "C:\Program Files\Zabbix Agent 2\zabbix_agent2.conf" `
+  -T
 ```
 
-Resultado confirmado:
+**Causa**
+
+Un plugin NVIDIA instalado junto con otros plugins no podía ejecutarse y bloqueaba el registro de plugins del Agent 2. El problema no era MongoDB.
+
+**Solución del laboratorio**
+
+Deshabilitar/retirar de la ruta incluida la configuración del plugin NVIDIA que no se utilizaría, sin borrar evidencias hasta confirmar el diagnóstico. Después:
 
 ```text
-rule family="ipv4" source address="192.20.0.12/32" port port="10050" protocol="tcp" accept
-rule family="ipv4" source address="192.0.0.0/24" port port="10000" protocol="tcp" accept
-rule family="ipv4" source address="192.20.0.10/32" port port="10050" protocol="tcp" accept
+Validation successful
 ```
 
-La regla para `192.20.0.10/32` se conserva hasta confirmar que no corresponde a otro Zabbix Server o proxy.
+El servicio volvió a iniciar normalmente.
 
-### Resultado en Zabbix
+**Lección**
 
-```text
-192.0.0.73:10050
-Estado: Disponible
-Error: ninguno
-```
+- Validar siempre Agent 2 con `-T` antes de reiniciar.
+- Instalar/activar solo plugins necesarios.
+- Un fallo de un plugin puede impedir el arranque global del Agent 2.
+- No atribuir automáticamente el fallo al último archivo que se editó.
 
-**Estado:** resuelta y persistida después de recargar `firewalld`.
+**Estado:** resuelta.
